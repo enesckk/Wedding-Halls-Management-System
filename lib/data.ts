@@ -1,0 +1,331 @@
+import type { WeddingHall, User, Message, Request, Event } from "./types";
+
+export const users: User[] = [
+  {
+    id: "1",
+    name: "Ahmet Yılmaz",
+    email: "ahmet.yilmaz@belediye.gov.tr",
+    role: "admin",
+  },
+  {
+    id: "2",
+    name: "Mehmet Demir",
+    email: "mehmet.demir@belediye.gov.tr",
+    role: "staff",
+  },
+  {
+    id: "3",
+    name: "Ayşe Kaya",
+    email: "ayse.kaya@belediye.gov.tr",
+    role: "staff",
+  },
+];
+
+export const mockUser: User = users[0];
+
+export const mockMessages: Message[] = [
+  {
+    id: "1",
+    userId: "1",
+    userName: "Ahmet Yılmaz",
+    userRole: "admin",
+    content: "Yarın saat 14:00'te Atatürk Nikah Salonu'nda bakım çalışması yapılacaktır. Lütfen randevuları kontrol ediniz.",
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
+    channel: "duyurular",
+  },
+  {
+    id: "2",
+    userId: "2",
+    userName: "Mehmet Demir",
+    userRole: "staff",
+    content: "Cumhuriyet Salonu'ndaki klima arızası giderildi.",
+    timestamp: new Date(Date.now() - 1000 * 60 * 30),
+    channel: "general",
+  },
+  {
+    id: "3",
+    userId: "3",
+    userName: "Ayşe Kaya",
+    userRole: "staff",
+    content: "Bahçe Nikah Alanı için yeni çiçek düzenlemesi yapıldı. Görsel çok güzel oldu!",
+    timestamp: new Date(Date.now() - 1000 * 60 * 15),
+    channel: "general",
+  },
+  {
+    id: "4",
+    userId: "1",
+    userName: "Ahmet Yılmaz",
+    userRole: "admin",
+    content: "Bu hafta sonu yoğun talep bekleniyor, lütfen ekstra dikkatli olalım.",
+    timestamp: new Date(Date.now() - 1000 * 60 * 5),
+    channel: "general",
+  },
+];
+
+export const mockRequests: Request[] = [
+  {
+    id: "1",
+    userId: "2",
+    userName: "Mehmet Demir",
+    hallId: "1",
+    hallName: "Atatürk Nikah Salonu",
+    date: "2026-01-25",
+    timeSlot: "14:00 - 15:00",
+    status: "pending",
+    message: "Bu tarih için rezervasyon yapılabilir mi? Müşteri çok ısrarcı.",
+    responses: [],
+    createdAt: new Date(Date.now() - 1000 * 60 * 60),
+  },
+  {
+    id: "2",
+    userId: "3",
+    userName: "Ayşe Kaya",
+    hallId: "3",
+    hallName: "Bahçe Nikah Alanı",
+    date: "2026-01-28",
+    timeSlot: "15:30 - 16:30",
+    status: "approved",
+    message: "VIP müşteri için özel düzenleme talep ediliyor.",
+    responses: [
+      {
+        id: "r1",
+        userId: "1",
+        userName: "Ahmet Yılmaz",
+        userRole: "admin",
+        content: "Onaylandı, ekstra dekorasyon için bütçe ayrıldı.",
+        timestamp: new Date(Date.now() - 1000 * 60 * 30),
+      },
+    ],
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
+  },
+  {
+    id: "3",
+    userId: "2",
+    userName: "Mehmet Demir",
+    hallId: "2",
+    hallName: "Cumhuriyet Nikah Salonu",
+    date: "2026-01-26",
+    timeSlot: "10:30 - 11:30",
+    status: "rejected",
+    message: "Acil bir talep geldi, müsaitlik durumunu kontrol edebilir misiniz?",
+    responses: [
+      {
+        id: "r2",
+        userId: "1",
+        userName: "Ahmet Yılmaz",
+        userRole: "admin",
+        content: "Maalesef o tarihte bakım planlanmış durumda, başka tarih önerebilir misiniz?",
+        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12),
+      },
+    ],
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48),
+  },
+];
+
+export const weddingHalls: WeddingHall[] = [
+  {
+    id: "1",
+    name: "Atatürk Nikah Salonu",
+    address: "Cumhuriyet Mahallesi, Atatürk Caddesi No: 12, Merkez",
+    capacity: 150,
+    description:
+      "Modern mimarisi ve geniş kapasitesiyle şehrimizin en prestijli nikah salonudur. Klima, ses sistemi ve profesyonel aydınlatma sistemleri mevcuttur.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&q=80",
+    availability: [
+      { id: "1-1", timeRange: "09:00 - 10:00", status: "available" },
+      { id: "1-2", timeRange: "10:30 - 11:30", status: "booked" },
+      { id: "1-3", timeRange: "12:00 - 13:00", status: "available" },
+      { id: "1-4", timeRange: "14:00 - 15:00", status: "booked" },
+      { id: "1-5", timeRange: "15:30 - 16:30", status: "available" },
+      { id: "1-6", timeRange: "17:00 - 18:00", status: "booked" },
+    ],
+  },
+  {
+    id: "2",
+    name: "Cumhuriyet Nikah Salonu",
+    address: "Yeni Mahalle, İstiklal Sokak No: 45, Merkez",
+    capacity: 100,
+    description:
+      "Şık ve samimi atmosferiyle özel günlerinizi unutulmaz kılacak bir mekan. Modern dekorasyonu ve merkezi konumuyla tercih edilen salonlarımızdan biridir.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=800&q=80",
+    availability: [
+      { id: "2-1", timeRange: "09:00 - 10:00", status: "booked" },
+      { id: "2-2", timeRange: "10:30 - 11:30", status: "available" },
+      { id: "2-3", timeRange: "12:00 - 13:00", status: "booked" },
+      { id: "2-4", timeRange: "14:00 - 15:00", status: "available" },
+      { id: "2-5", timeRange: "15:30 - 16:30", status: "booked" },
+      { id: "2-6", timeRange: "17:00 - 18:00", status: "available" },
+    ],
+  },
+  {
+    id: "3",
+    name: "Bahçe Nikah Alanı",
+    address: "Park Mahallesi, Yeşil Sokak No: 8, Merkez",
+    capacity: 200,
+    description:
+      "Doğayla iç içe, açık hava nikah törenleri için ideal bir mekan. Geniş bahçesi ve muhteşem manzarasıyla hayalinizdeki nikah törenini gerçekleştirin.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1478146896981-b80fe463b330?w=800&q=80",
+    availability: [
+      { id: "3-1", timeRange: "09:00 - 10:00", status: "available" },
+      { id: "3-2", timeRange: "10:30 - 11:30", status: "available" },
+      { id: "3-3", timeRange: "12:00 - 13:00", status: "booked" },
+      { id: "3-4", timeRange: "14:00 - 15:00", status: "available" },
+      { id: "3-5", timeRange: "15:30 - 16:30", status: "available" },
+      { id: "3-6", timeRange: "17:00 - 18:00", status: "booked" },
+    ],
+  },
+  {
+    id: "4",
+    name: "Tarihi Konak Nikah Salonu",
+    address: "Kültür Mahallesi, Tarih Caddesi No: 3, Merkez",
+    capacity: 80,
+    description:
+      "Restore edilmiş tarihi konağımızda, geleneksel Türk mimarisiyle bezeli bu özel mekanda nikah töreninizi gerçekleştirin.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1510076857177-7470076d4098?w=800&q=80",
+    availability: [
+      { id: "4-1", timeRange: "09:00 - 10:00", status: "booked" },
+      { id: "4-2", timeRange: "10:30 - 11:30", status: "booked" },
+      { id: "4-3", timeRange: "12:00 - 13:00", status: "available" },
+      { id: "4-4", timeRange: "14:00 - 15:00", status: "booked" },
+      { id: "4-5", timeRange: "15:30 - 16:30", status: "available" },
+      { id: "4-6", timeRange: "17:00 - 18:00", status: "available" },
+    ],
+  },
+  {
+    id: "5",
+    name: "Modern Nikah Salonu",
+    address: "Yenişehir Mahallesi, Teknoloji Caddesi No: 25, Merkez",
+    capacity: 120,
+    description:
+      "Minimalist tasarımı ve son teknoloji donanımlarıyla modern çiftler için ideal bir nikah salonu. LED aydınlatma ve dijital sunum sistemleri mevcuttur.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1505236858219-8359eb29e329?w=800&q=80",
+    availability: [
+      { id: "5-1", timeRange: "09:00 - 10:00", status: "available" },
+      { id: "5-2", timeRange: "10:30 - 11:30", status: "available" },
+      { id: "5-3", timeRange: "12:00 - 13:00", status: "available" },
+      { id: "5-4", timeRange: "14:00 - 15:00", status: "booked" },
+      { id: "5-5", timeRange: "15:30 - 16:30", status: "booked" },
+      { id: "5-6", timeRange: "17:00 - 18:00", status: "available" },
+    ],
+  },
+  {
+    id: "6",
+    name: "Deniz Manzaralı Nikah Salonu",
+    address: "Sahil Mahallesi, Liman Caddesi No: 1, Merkez",
+    capacity: 90,
+    description:
+      "Eşsiz deniz manzarasıyla nikah töreninize romantik bir atmosfer katın. Panoramik pencereleri ve teras alanıyla unutulmaz anılar biriktirin.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1469371670807-013ccf25f16a?w=800&q=80",
+    availability: [
+      { id: "6-1", timeRange: "09:00 - 10:00", status: "booked" },
+      { id: "6-2", timeRange: "10:30 - 11:30", status: "available" },
+      { id: "6-3", timeRange: "12:00 - 13:00", status: "booked" },
+      { id: "6-4", timeRange: "14:00 - 15:00", status: "available" },
+      { id: "6-5", timeRange: "15:30 - 16:30", status: "available" },
+      { id: "6-6", timeRange: "17:00 - 18:00", status: "booked" },
+    ],
+  },
+];
+
+export function getHallById(id: string): WeddingHall | undefined {
+  return weddingHalls.find((hall) => hall.id === id);
+}
+
+export const mockEvents: Event[] = [
+  {
+    id: "e1",
+    title: "Yılmaz - Demir Nikahı",
+    type: "nikah",
+    hallId: "1",
+    hallName: "Atatürk Nikah Salonu",
+    date: "2026-01-23",
+    timeSlot: "10:30 - 11:30",
+    description: "150 kişilik nikah töreni",
+    guestCount: 150,
+    contactName: "Ali Yılmaz",
+    contactPhone: "0532 123 4567",
+    createdBy: "1",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3),
+  },
+  {
+    id: "e2",
+    title: "Öztürk - Çelik Nikahı",
+    type: "nikah",
+    hallId: "1",
+    hallName: "Atatürk Nikah Salonu",
+    date: "2026-01-23",
+    timeSlot: "14:00 - 15:00",
+    description: "Kalabalık aile nikahı",
+    guestCount: 120,
+    contactName: "Mehmet Öztürk",
+    contactPhone: "0533 234 5678",
+    createdBy: "1",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
+  },
+  {
+    id: "e3",
+    title: "Belediye Konseri",
+    type: "konser",
+    hallId: "3",
+    hallName: "Bahçe Nikah Alanı",
+    date: "2026-01-25",
+    timeSlot: "17:00 - 18:00",
+    description: "Yaz konseri etkinliği",
+    guestCount: 200,
+    contactName: "Kültür Müdürlüğü",
+    contactPhone: "0212 555 0000",
+    createdBy: "1",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
+  },
+  {
+    id: "e4",
+    title: "Kaya - Aydın Nişanı",
+    type: "nisan",
+    hallId: "2",
+    hallName: "Cumhuriyet Nikah Salonu",
+    date: "2026-01-24",
+    timeSlot: "15:30 - 16:30",
+    description: "Aile nişan töreni",
+    guestCount: 80,
+    contactName: "Fatma Kaya",
+    contactPhone: "0534 345 6789",
+    createdBy: "2",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 12),
+  },
+  {
+    id: "e5",
+    title: "Aylık Personel Toplantısı",
+    type: "toplanti",
+    hallId: "4",
+    hallName: "Tarihi Konak Nikah Salonu",
+    date: "2026-01-26",
+    timeSlot: "09:00 - 10:00",
+    description: "Belediye personel toplantısı",
+    guestCount: 50,
+    contactName: "İnsan Kaynakları",
+    contactPhone: "0212 555 0001",
+    createdBy: "1",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6),
+  },
+  {
+    id: "e6",
+    title: "Arslan - Koç Nikahı",
+    type: "nikah",
+    hallId: "6",
+    hallName: "Deniz Manzaralı Nikah Salonu",
+    date: "2026-01-23",
+    timeSlot: "12:00 - 13:00",
+    description: "Deniz manzaralı nikah",
+    guestCount: 90,
+    contactName: "Kemal Arslan",
+    contactPhone: "0535 456 7890",
+    createdBy: "1",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48),
+  },
+];
