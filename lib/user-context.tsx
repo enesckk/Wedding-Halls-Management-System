@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import type { User } from "./types";
 import { users } from "./data";
 
@@ -14,6 +14,15 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User>(users[0]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = sessionStorage.getItem("demoUserId");
+    if (id) {
+      const u = users.find((x) => x.id === id);
+      if (u) setCurrentUser(u);
+    }
+  }, []);
 
   const isAdmin = currentUser.role === "admin";
 

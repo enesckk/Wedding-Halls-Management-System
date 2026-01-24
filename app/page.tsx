@@ -35,8 +35,11 @@ export default function LoginPage() {
     }
   };
 
-  const handleQuickLogin = async (userEmail: string) => {
+  const handleQuickLogin = async (user: (typeof users)[0]) => {
     setIsLoading(true);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("demoUserId", user.id);
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
     router.push("/dashboard");
   };
@@ -125,7 +128,7 @@ export default function LoginPage() {
                   type="button"
                   variant="outline"
                   className="h-auto w-full justify-start gap-3 p-3 bg-transparent"
-                  onClick={() => handleQuickLogin(user.email)}
+                  onClick={() => handleQuickLogin(user)}
                   disabled={isLoading}
                 >
                   <div

@@ -36,6 +36,9 @@ export function Sidebar() {
   const { currentUser, isAdmin } = useUser();
 
   const handleLogout = () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("demoUserId");
+    }
     router.push("/");
   };
 
