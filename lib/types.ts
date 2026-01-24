@@ -12,7 +12,10 @@ export interface WeddingHall {
   availability?: Array<{ id: string; timeRange: string; status: "available" | "booked" }>;
 }
 
-/** Backend Schedule: date, startTime, endTime. status: Available | Reserved */
+/**
+ * Backend Schedule DTO. Use date, startTime, endTime (no timeRange).
+ * status: Available | Reserved.
+ */
 export interface Schedule {
   id: string;
   weddingHallId: string;
@@ -41,7 +44,10 @@ export interface Message {
   channel: "general" | "duyurular";
 }
 
-/** Backend-aligned: Pending | Answered. hallName joined client-side for display. */
+/**
+ * Backend Request DTO. status: Pending | Answered only (no approved/rejected).
+ * hallName joined client-side for display.
+ */
 export interface Request {
   id: string;
   weddingHallId: string;
