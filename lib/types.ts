@@ -49,6 +49,7 @@ export interface Message {
 
 /**
  * Backend RequestDto. status: Pending | Answered (enum 0|1).
+ * eventType: 0=Nikah, 1=Nisan, 2=Konser, 3=Toplanti, 4=Ozel
  * hallName joined client-side from halls for display; not in DTO.
  */
 export interface Request {
@@ -59,6 +60,11 @@ export interface Request {
   status: "Pending" | "Answered";
   createdAt: string;
   hallName: string;
+  eventType: number;
+  eventName: string;
+  eventOwner: string;
+  eventDate: string;
+  eventTime: string;
 }
 
 /** Mesajlar – mock only; no API */

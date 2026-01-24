@@ -10,6 +10,11 @@ type RequestDto = {
   message: string;
   status: number;
   createdAt: string;
+  eventType: number;
+  eventName: string;
+  eventOwner: string;
+  eventDate: string;
+  eventTime: string;
 };
 
 function toRequest(d: RequestDto): Request {
@@ -21,12 +26,22 @@ function toRequest(d: RequestDto): Request {
     status: d.status === 1 ? "Answered" : "Pending",
     createdAt: d.createdAt,
     hallName: "",
+    eventType: d.eventType,
+    eventName: d.eventName,
+    eventOwner: d.eventOwner,
+    eventDate: d.eventDate,
+    eventTime: d.eventTime,
   };
 }
 
 export type CreateRequestData = {
   weddingHallId: string;
   message: string;
+  eventType: number;
+  eventName: string;
+  eventOwner: string;
+  eventDate: string;
+  eventTime: string;
 };
 
 export async function createRequest(data: CreateRequestData): Promise<Request> {

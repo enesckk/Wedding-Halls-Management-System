@@ -18,6 +18,7 @@ import {
   MessageSquare,
   FileText,
   Shield,
+  Plus,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/dashboard", label: "Ana Sayfa", icon: Home, roles: ["Editor", "Viewer"] as const },
   { href: "/dashboard/takvim", label: "Takvim", icon: Calendar, roles: ["Editor", "Viewer"] as const },
   { href: "/dashboard/salonlar", label: "Salonlar", icon: Building2, roles: ["Editor", "Viewer"] as const },
+  { href: "/dashboard/talep-et", label: "Talep Et", icon: Plus, roles: ["Editor", "Viewer"] as const },
   { href: "/dashboard/mesajlar", label: "Mesajlar", icon: MessageSquare, roles: ["Editor", "Viewer"] as const },
   { href: "/dashboard/talepler", label: "Talepler", icon: FileText, roles: ["Editor"] as const },
   { href: "/dashboard/ayarlar", label: "Ayarlar", icon: Settings, roles: ["Editor"] as const },

@@ -1,9 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MapPin, Users } from "lucide-react";
 import type { WeddingHall } from "@/lib/types";
+import { RequestModal } from "@/components/request-modal";
 
 interface HallCardProps {
   hall: WeddingHall;
@@ -37,7 +40,7 @@ export function HallCard({ hall }: HallCardProps) {
         </div>
       </CardContent>
       
-      <CardFooter className="border-t border-border bg-muted/30 p-4">
+      <CardFooter className="flex flex-col gap-2 border-t border-border bg-muted/30 p-4">
         <Link href={`/dashboard/${hall.id}`} className="w-full">
           <Button
             variant="default"
@@ -46,6 +49,7 @@ export function HallCard({ hall }: HallCardProps) {
             Detayları Gör
           </Button>
         </Link>
+        <RequestModal hallId={hall.id} hallName={hall.name} />
       </CardFooter>
     </Card>
   );

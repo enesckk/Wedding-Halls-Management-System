@@ -52,7 +52,7 @@ export function RequestModal({ hallId, hallName }: RequestModalProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button variant="outline" className="w-full gap-2">
           <MessageSquarePlus className="h-4 w-4" />
           Talep Oluştur
         </Button>
