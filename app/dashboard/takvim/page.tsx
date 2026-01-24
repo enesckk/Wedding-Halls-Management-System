@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,9 @@ import {
   Calendar as CalendarIcon,
   Clock,
   MapPin,
+  RefreshCw,
 } from "lucide-react";
+import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -53,32 +55,29 @@ export default function TakvimPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedHall, setSelectedHall] = useState<string>("all");
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const h = await getHalls();
-        if (cancelled) return;
-        setHalls(h ?? []);
-        const all: ScheduleWithHall[] = [];
-        for (const hall of h ?? []) {
-          const list = await getSchedulesByHall(hall.id);
-          for (const s of list ?? []) {
-            all.push({ ...s, hallName: hall.name });
-          }
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const h = await getHalls();
+      setHalls(h ?? []);
+      const all: ScheduleWithHall[] = [];
+      for (const hall of h ?? []) {
+        const list = await getSchedulesByHall(hall.id);
+        for (const s of list ?? []) {
+          all.push({ ...s, hallName: hall.name });
         }
-        if (!cancelled) setSchedules(all);
-      } catch (e) {
-        if (!cancelled) {
-          const msg = e instanceof Error ? e.message : "Veri yüklenemedi.";
-          toast.error(msg);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+      setSchedules(all);
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -154,11 +153,23 @@ export default function TakvimPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Takvim</h1>
-        <p className="text-sm text-muted-foreground">
-          Salon müsaitliklerini görüntüleyin
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Takvim</h1>
+          <p className="text-sm text-muted-foreground">
+            Salon müsaitliklerini görüntüleyin
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 self-start sm:self-center"
+          onClick={() => refresh()}
+          disabled={loading}
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Yenile
+        </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-12">

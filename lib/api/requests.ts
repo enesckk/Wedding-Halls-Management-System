@@ -41,3 +41,10 @@ export async function getRequests(): Promise<Request[]> {
   const list = await fetchApi<RequestDto[]>(REQUESTS);
   return (list ?? []).map(toRequest);
 }
+
+export async function answerRequest(id: string): Promise<Request> {
+  const d = await fetchApi<RequestDto>(`${REQUESTS}/${id}/answer`, {
+    method: "PUT",
+  });
+  return toRequest(d);
+}

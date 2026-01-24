@@ -1,6 +1,9 @@
 /** Backend-aligned: Editor = admin, Viewer = staff */
 export type UserRole = "Editor" | "Viewer";
 
+/**
+ * Backend WeddingHallDto. availability is mock-only (calendar-view); API uses Schedule[].
+ */
 export interface WeddingHall {
   id: string;
   name: string;
@@ -8,13 +11,13 @@ export interface WeddingHall {
   capacity: number;
   description: string;
   imageUrl: string;
-  /** Mock only (Dashboard CalendarView). API halls use separate Schedule[] */
+  /** Mock only. API halls use getSchedulesByHall. */
   availability?: Array<{ id: string; timeRange: string; status: "available" | "booked" }>;
 }
 
 /**
- * Backend Schedule DTO. Use date, startTime, endTime (no timeRange).
- * status: Available | Reserved.
+ * Backend ScheduleDto. date/startTime/endTime as strings (ISO date, HH:mm).
+ * status: Available | Reserved (enum 0|1).
  */
 export interface Schedule {
   id: string;
@@ -45,8 +48,8 @@ export interface Message {
 }
 
 /**
- * Backend Request DTO. status: Pending | Answered only (no approved/rejected).
- * hallName joined client-side for display.
+ * Backend RequestDto. status: Pending | Answered (enum 0|1).
+ * hallName joined client-side from halls for display; not in DTO.
  */
 export interface Request {
   id: string;

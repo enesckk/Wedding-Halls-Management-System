@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/utils/api-error";
+
 const getBaseUrl = (): string => {
   return process.env.NEXT_PUBLIC_API_URL ?? "";
 };
@@ -11,9 +13,11 @@ const getToken = (): string | null => {
 
 export type FetchOptions = RequestInit & { skipAuth?: boolean };
 
+type ErrorBody = { message?: string; errors?: string[] };
+
 /**
  * Fetch wrapper: base URL from NEXT_PUBLIC_API_URL, JWT from sessionStorage,
- * non-2xx handling, parsed JSON response.
+ * non-2xx → typed ApiError, parsed JSON response.
  */
 export async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const base = getBaseUrl().replace(/\/$/, "");
@@ -33,17 +37,20 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
   const res = await fetch(url, { ...init, headers });
 
   if (!res.ok) {
+    const text = await res.text();
     let message = `HTTP ${res.status}`;
+    let errors: string[] | undefined;
     try {
-      const body = await res.json();
+      const body = (text ? JSON.parse(text) : {}) as ErrorBody;
       if (body?.message) message = body.message;
-      else if (Array.isArray(body?.errors) && body.errors.length)
-        message = body.errors.join(", ");
+      if (Array.isArray(body?.errors) && body.errors.length) {
+        errors = body.errors;
+        if (!body?.message) message = body.errors.join(", ");
+      } else if (text && !body?.message) message = text;
     } catch {
-      const text = await res.text();
       if (text) message = text;
     }
-    throw new Error(message);
+    throw new ApiError(message, errors, res.status);
   }
 
   const contentType = res.headers.get("content-type");

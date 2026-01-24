@@ -6,10 +6,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useUser } from "@/lib/user-context";
+import { isEditor as isEditorRole } from "@/lib/utils/role";
+import { Unauthorized } from "@/components/unauthorized";
 import { Bell, Lock, User, Mail } from "lucide-react";
 
 export default function AyarlarPage() {
-  const { currentUser } = useUser();
+  const { user, loading } = useUser();
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!isEditorRole(user?.role)) {
+    return <Unauthorized />;
+  }
 
   return (
     <div className="space-y-6">
@@ -32,11 +46,11 @@ export default function AyarlarPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Ad Soyad</Label>
-              <Input id="name" defaultValue={currentUser?.name ?? ""} />
+              <Input id="name" defaultValue={user?.name ?? ""} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">E-posta</Label>
-              <Input id="email" type="email" defaultValue={currentUser?.email ?? ""} />
+              <Input id="email" type="email" defaultValue={user?.email ?? ""} />
             </div>
             <Button className="w-full">Değişiklikleri Kaydet</Button>
           </CardContent>

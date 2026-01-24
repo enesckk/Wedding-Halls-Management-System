@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/user-context";
+import { isEditor as isEditorRole } from "@/lib/utils/role";
 import { Badge } from "@/components/ui/badge";
 import {
   Building2,
@@ -20,7 +21,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-/** Editor-only items hidden for Viewer. Align with lib/dashboard-routes EDITOR_ONLY_PATHS. */
+/**
+ * Navigation items with role-based visibility.
+ * Editor-only items are automatically hidden for Viewer via role filtering.
+ * Align with lib/dashboard-routes EDITOR_ONLY_PATHS.
+ */
 const navItems = [
   { href: "/dashboard", label: "Ana Sayfa", icon: Home, roles: ["Editor", "Viewer"] as const },
   { href: "/dashboard/takvim", label: "Takvim", icon: Calendar, roles: ["Editor", "Viewer"] as const },
@@ -34,17 +39,10 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
-  const { currentUser, isEditor } = useUser();
+  const { user, isEditor, logout } = useUser();
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      sessionStorage.clear();
-    }
-    router.push("/");
-  };
-
-  const filteredNavItems = currentUser
-    ? navItems.filter((item) => item.roles.includes(currentUser.role))
+  const filteredNavItems = user
+    ? navItems.filter((item) => item.roles.includes(user.role))
     : [];
 
   return (
@@ -113,27 +111,27 @@ export function Sidebar() {
           )}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            {isEditor ? (
+            {isEditorRole(user?.role) ? (
               <Shield className="h-4 w-4 text-primary" />
             ) : (
               <User className="h-4 w-4 text-primary" />
             )}
           </div>
-          {!collapsed && currentUser && (
+          {!collapsed && user && (
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="truncate text-sm font-medium text-foreground">
-                  {currentUser.name}
+                  {user.name}
                 </p>
                 <Badge
-                  variant={isEditor ? "default" : "outline"}
+                  variant={isEditorRole(user.role) ? "default" : "outline"}
                   className="text-[10px]"
                 >
-                  {isEditor ? "Editor" : "Viewer"}
+                  {isEditorRole(user.role) ? "Editor" : "Viewer"}
                 </Badge>
               </div>
               <p className="truncate text-xs text-muted-foreground">
-                {currentUser.email}
+                {user.email}
               </p>
             </div>
           )}
@@ -144,7 +142,7 @@ export function Sidebar() {
             "w-full justify-start gap-3 text-muted-foreground hover:text-destructive",
             collapsed && "justify-center px-2"
           )}
-          onClick={handleLogout}
+          onClick={logout}
         >
           <LogOut className="h-5 w-5 shrink-0" />
           {!collapsed && <span>Çıkış Yap</span>}

@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@/lib/user-context";
-import { getRequests } from "@/lib/api/requests";
+import { isEditor as isEditorRole } from "@/lib/utils/role";
+import { getRequests, answerRequest } from "@/lib/api/requests";
 import { getHalls } from "@/lib/api/halls";
 import type { Request as Req, WeddingHall } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Unauthorized } from "@/components/unauthorized";
 import {
   FileText,
   Clock,
@@ -17,7 +21,9 @@ import {
   Building2,
   Calendar,
   User,
+  Send,
 } from "lucide-react";
+import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 
 function formatDate(s: string) {
@@ -48,41 +54,57 @@ function StatusBadge({ status }: { status: Req["status"] }) {
 }
 
 export default function RequestsPage() {
-  const { isEditor } = useUser();
+  const { user, loading: authLoading } = useUser();
   const [requests, setRequests] = useState<Req[]>([]);
   const [halls, setHalls] = useState<WeddingHall[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Req | null>(null);
+  const [responseNote, setResponseNote] = useState("");
+  const [answeringId, setAnsweringId] = useState<string | null>(null);
+
+  const loadRequests = useCallback(async () => {
+    try {
+      const [reqs, h] = await Promise.all([getRequests(), getHalls()]);
+      setHalls(h ?? []);
+      const withHall = (reqs ?? []).map((r) => ({
+        ...r,
+        hallName: h.find((x) => x.id === r.weddingHallId)?.name ?? "",
+      }));
+      setRequests(withHall);
+      setSelected((prev) => {
+        if (!prev) return null;
+        const next = withHall.find((x) => x.id === prev.id);
+        return next ?? prev;
+      });
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [reqs, h] = await Promise.all([getRequests(), getHalls()]);
-        if (cancelled) return;
-        setHalls(h ?? []);
-        const withHall = (reqs ?? []).map((r) => ({
-          ...r,
-          hallName: h.find((x) => x.id === r.weddingHallId)?.name ?? "",
-        }));
-        setRequests(withHall);
-      } catch (e) {
-        if (!cancelled) {
-          const msg = e instanceof Error ? e.message : "Talepler yüklenemedi.";
-          toast.error(msg);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    setLoading(true);
+    loadRequests();
+  }, [loadRequests]);
+
+  useEffect(() => {
+    setResponseNote("");
+  }, [selected?.id]);
 
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
   const answeredCount = requests.filter((r) => r.status === "Answered").length;
 
-  if (!isEditor) {
-    return null;
+  if (authLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!isEditorRole(user?.role)) {
+    return <Unauthorized />;
   }
 
   if (loading) {
@@ -212,7 +234,7 @@ export default function RequestsPage() {
                   <StatusBadge status={selected.status} />
                 </div>
               </CardHeader>
-              <CardContent className="p-4">
+              <CardContent className="space-y-4 p-4">
                 <div className="flex gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
                     <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -224,6 +246,41 @@ export default function RequestsPage() {
                     </div>
                   </div>
                 </div>
+                {selected.status === "Pending" && (
+                  <div className="space-y-3 border-t border-border pt-4">
+                    <Label htmlFor="response-note" className="text-sm text-muted-foreground">
+                      Yanıt notu (isteğe bağlı, kaydedilmez)
+                    </Label>
+                    <Textarea
+                      id="response-note"
+                      placeholder="İsteğe bağlı not..."
+                      value={responseNote}
+                      onChange={(e) => setResponseNote(e.target.value)}
+                      className="min-h-20 resize-none"
+                    />
+                    <Button
+                      className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                      disabled={answeringId === selected.id}
+                      onClick={async () => {
+                        if (!selected) return;
+                        setAnsweringId(selected.id);
+                        try {
+                          await answerRequest(selected.id);
+                          toast.success("Talep yanıtlandı.");
+                          setResponseNote("");
+                          await loadRequests();
+                        } catch (e) {
+                          toast.error(toUserFriendlyMessage(e));
+                        } finally {
+                          setAnsweringId(null);
+                        }
+                      }}
+                    >
+                      <Send className="h-4 w-4" />
+                      {answeringId === selected.id ? "Yanıtlanıyor..." : "Yanıtla"}
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </>
           ) : (

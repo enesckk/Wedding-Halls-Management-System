@@ -1,44 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Building2, Lock, Mail } from "lucide-react";
-import { login } from "@/lib/api/auth";
-import { TOKEN_KEY } from "@/lib/api/client";
-import { toast } from "sonner";
+import { useUser } from "@/lib/user-context";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const { login, loading } = useUser();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setIsLoading(true);
 
     try {
-      const res = await login(email, password);
-      if (!res.success || !res.token) {
-        setError(res.message ?? "Giriş başarısız.");
-        return;
-      }
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem(TOKEN_KEY, res.token);
-      }
-      router.push("/dashboard");
+      await login(email, password);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Giriş başarısız.";
       setError(msg);
-      toast.error(msg);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -108,9 +92,9 @@ export default function LoginPage() {
             <Button
               type="submit"
               className="h-11 w-full bg-primary text-primary-foreground hover:bg-primary/90"
-              disabled={isLoading}
+              disabled={loading}
             >
-              {isLoading ? "Giriş yapılıyor..." : "Giriş Yap"}
+              {loading ? "Giriş yapılıyor..." : "Giriş Yap"}
             </Button>
           </form>
 

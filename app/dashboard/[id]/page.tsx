@@ -5,10 +5,17 @@ import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardAction,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AvailabilityTable } from "@/components/availability-table";
 import { RequestModal } from "@/components/request-modal";
+import { HallFormModal } from "@/components/hall-form-modal";
 import { getHallById } from "@/lib/api/halls";
 import { getSchedulesByHall, updateSchedule } from "@/lib/api/schedules";
 import { useUser } from "@/lib/user-context";
@@ -23,7 +30,10 @@ import {
   CheckCircle2,
   XCircle,
   Shield,
+  Pencil,
 } from "lucide-react";
+import { toUserFriendlyMessage } from "@/lib/utils/api-error";
+import { hasOverlap } from "@/lib/utils/schedule-overlap";
 import { toast } from "sonner";
 
 function todayLocal(): string {
@@ -41,6 +51,7 @@ export default function HallDetailPage() {
   const [hall, setHall] = useState<WeddingHall | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updateOpen, setUpdateOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,8 +63,7 @@ export default function HallDetailPage() {
       const today = todayLocal();
       setSchedules((s ?? []).filter((x) => x.date === today));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Veri yüklenemedi.";
-      toast.error(msg);
+      toast.error(toUserFriendlyMessage(e));
     } finally {
       setLoading(false);
     }
@@ -67,6 +77,18 @@ export default function HallDetailPage() {
     async (slot: Schedule) => {
       if (!hall) return;
       const newStatus = slot.status === "Available" ? "Reserved" : "Available";
+      if (
+        hasOverlap(
+          schedules,
+          slot.id,
+          slot.date,
+          slot.startTime,
+          slot.endTime
+        )
+      ) {
+        toast.error("Bu saat aralığı başka bir müsaitlikle çakışıyor.");
+        return;
+      }
       try {
         await updateSchedule(slot.id, {
           weddingHallId: hall.id,
@@ -76,13 +98,17 @@ export default function HallDetailPage() {
           status: newStatus,
         });
         await load();
+        toast.success("Müsaitlik güncellendi.");
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Güncellenemedi.";
-        toast.error(msg);
+        toast.error(toUserFriendlyMessage(e));
       }
     },
-    [hall, load]
+    [hall, load, schedules]
   );
+
+  const handleUpdateSuccess = useCallback((updated: WeddingHall) => {
+    setHall(updated);
+  }, []);
 
   if (loading) {
     return (
@@ -197,6 +223,19 @@ export default function HallDetailPage() {
               <Info className="h-5 w-5 text-primary" />
               Salon Bilgileri
             </CardTitle>
+            {isEditor && (
+              <CardAction>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setUpdateOpen(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Düzenle
+                </Button>
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-start gap-3">
@@ -221,6 +260,16 @@ export default function HallDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {isEditor && (
+          <HallFormModal
+            open={updateOpen}
+            onOpenChange={setUpdateOpen}
+            mode="update"
+            initialHall={hall}
+            onSuccess={handleUpdateSuccess}
+          />
+        )}
 
         <Card className="border-border bg-card lg:col-span-2">
           <CardHeader>

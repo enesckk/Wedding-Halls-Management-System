@@ -15,7 +15,7 @@ import { isEditorOnlyPath } from "@/lib/dashboard-routes";
 export function AuthGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoading } = useUser();
+  const { user, isAuthenticated, isEditor, loading } = useUser();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -24,20 +24,20 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       router.replace("/");
       return;
     }
-    if (isLoading) return;
-    if (!currentUser) {
+    if (loading) return;
+    if (!isAuthenticated) {
       router.replace("/");
       return;
     }
-    if (isEditorOnlyPath(pathname) && currentUser.role !== "Editor") {
+    if (isEditorOnlyPath(pathname) && !isEditor) {
       router.replace("/dashboard");
     }
-  }, [pathname, router, currentUser, isLoading]);
+  }, [pathname, router, isAuthenticated, isEditor, loading]);
 
   const token = typeof window !== "undefined" ? getToken() : null;
   if (!token) return null;
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -45,8 +45,8 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!currentUser) return null;
-  if (isEditorOnlyPath(pathname) && currentUser.role !== "Editor") return null;
+  if (!isAuthenticated) return null;
+  if (isEditorOnlyPath(pathname) && !isEditor) return null;
 
   return <>{children}</>;
 }

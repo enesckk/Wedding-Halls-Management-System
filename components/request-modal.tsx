@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { MessageSquarePlus, Send } from "lucide-react";
 import { createRequest } from "@/lib/api/requests";
+import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 
 interface RequestModalProps {
@@ -36,6 +37,7 @@ export function RequestModal({ hallId, hallName }: RequestModalProps) {
       await createRequest({ weddingHallId: hallId, message: message.trim() });
       setIsSubmitting(false);
       setSubmitted(true);
+      toast.success("Talep iletildi.");
       setTimeout(() => {
         setOpen(false);
         setMessage("");
@@ -43,8 +45,7 @@ export function RequestModal({ hallId, hallName }: RequestModalProps) {
       }, 2000);
     } catch (e) {
       setIsSubmitting(false);
-      const msg = e instanceof Error ? e.message : "Talep gönderilemedi.";
-      toast.error(msg);
+      toast.error(toUserFriendlyMessage(e));
     }
   };
 

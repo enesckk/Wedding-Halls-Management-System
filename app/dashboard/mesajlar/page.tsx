@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useUser } from "@/lib/user-context";
+import { isEditor as isEditorRole } from "@/lib/utils/role";
 import { mockMessages } from "@/lib/data";
 import type { Message } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ function formatTime(date: Date) {
 }
 
 export default function MessagesPage() {
-  const { currentUser, isEditor } = useUser();
+  const { user, isEditor } = useUser();
   const [messages, setMessages] = useState<Message[]>(mockMessages);
   const [newMessage, setNewMessage] = useState("");
   const [activeChannel, setActiveChannel] = useState<"general" | "duyurular">(
@@ -49,14 +50,14 @@ export default function MessagesPage() {
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   const handleSendMessage = () => {
-    if (!newMessage.trim() || !currentUser) return;
+    if (!newMessage.trim() || !user) return;
     if (activeChannel === "duyurular" && !isEditor) return;
 
     const message: Message = {
       id: Date.now().toString(),
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userRole: currentUser.role,
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
       content: newMessage,
       timestamp: new Date(),
       channel: activeChannel,
@@ -153,19 +154,19 @@ export default function MessagesPage() {
                     <div
                       key={message.id}
                       className={`flex gap-3 ${
-                        currentUser && message.userId === currentUser.id
+                        user && message.userId === user.id
                           ? "flex-row-reverse"
                           : ""
                       }`}
                     >
                       <div
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                          message.userRole === "Editor"
+                          isEditorRole(message.userRole)
                             ? "bg-primary/10"
                             : "bg-muted"
                         }`}
                       >
-                        {message.userRole === "Editor" ? (
+                        {isEditorRole(message.userRole) ? (
                           <Shield className="h-4 w-4 text-primary" />
                         ) : (
                           <User className="h-4 w-4 text-muted-foreground" />
@@ -173,12 +174,12 @@ export default function MessagesPage() {
                       </div>
                       <div
                         className={`max-w-[70%] ${
-                          currentUser && message.userId === currentUser.id ? "text-right" : ""
+                          user && message.userId === user.id ? "text-right" : ""
                         }`}
                       >
                         <div
                           className={`flex items-center gap-2 ${
-                            currentUser && message.userId === currentUser.id
+                            user && message.userId === user.id
                               ? "flex-row-reverse"
                               : ""
                           }`}
@@ -188,13 +189,13 @@ export default function MessagesPage() {
                           </span>
                           <Badge
                             variant={
-                              message.userRole === "Editor"
+                              isEditorRole(message.userRole)
                                 ? "default"
                                 : "outline"
                             }
                             className="text-[10px]"
                           >
-                            {message.userRole === "Editor" ? "Editor" : "Viewer"}
+                            {isEditorRole(message.userRole) ? "Editor" : "Viewer"}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
                             {formatTime(message.timestamp)}
@@ -202,7 +203,7 @@ export default function MessagesPage() {
                         </div>
                         <div
                           className={`mt-1 rounded-lg p-3 ${
-                            currentUser && message.userId === currentUser.id
+                            user && message.userId === user.id
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           }`}
@@ -244,7 +245,7 @@ export default function MessagesPage() {
                   />
                   <Button
                     onClick={handleSendMessage}
-                    disabled={!newMessage.trim() || !currentUser}
+                    disabled={!newMessage.trim() || !user}
                     className="gap-2"
                   >
                     <Send className="h-4 w-4" />
