@@ -5,6 +5,7 @@ import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole } from "@/lib/utils/role";
 import { getRequests, answerRequest } from "@/lib/api/requests";
 import { getHalls } from "@/lib/api/halls";
+import { getMessagesByRequestId, createMessage, type MessageDto } from "@/lib/api/messages";
 import type { Request as Req, WeddingHall } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +62,10 @@ export default function RequestsPage() {
   const [selected, setSelected] = useState<Req | null>(null);
   const [responseNote, setResponseNote] = useState("");
   const [answeringId, setAnsweringId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<MessageDto[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   const loadRequests = useCallback(async () => {
     try {
@@ -90,7 +95,40 @@ export default function RequestsPage() {
 
   useEffect(() => {
     setResponseNote("");
-  }, [selected?.id]);
+    setNewMessage("");
+    if (selected) {
+      loadMessages(selected.id);
+    } else {
+      setMessages([]);
+    }
+  }, [selected?.id, loadMessages]);
+
+  const loadMessages = useCallback(async (requestId: string) => {
+    setLoadingMessages(true);
+    try {
+      const msgs = await getMessagesByRequestId(requestId);
+      setMessages(msgs);
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, []);
+
+  const handleSendMessage = async () => {
+    if (!selected || !newMessage.trim()) return;
+    setSendingMessage(true);
+    try {
+      await createMessage(selected.id, { content: newMessage.trim() });
+      setNewMessage("");
+      await loadMessages(selected.id);
+      toast.success("Mesaj gönderildi.");
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setSendingMessage(false);
+    }
+  };
 
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
   const answeredCount = requests.filter((r) => r.status === "Answered").length;
@@ -234,53 +272,138 @@ export default function RequestsPage() {
                   <StatusBadge status={selected.status} />
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4 p-4">
-                <div className="flex gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              <CardContent className="flex flex-col p-0">
+                <div className="space-y-4 p-4">
+                  <div className="flex gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">Talep Mesajı</p>
+                      <div className="mt-1 rounded-lg bg-muted p-3">
+                        <p className="text-sm whitespace-pre-wrap">{selected.message}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">Mesaj</p>
-                    <div className="mt-1 rounded-lg bg-muted p-3">
-                      <p className="text-sm whitespace-pre-wrap">{selected.message}</p>
+                  {selected.status === "Pending" && (
+                    <div className="space-y-3 border-t border-border pt-4">
+                      <Label htmlFor="response-note" className="text-sm text-muted-foreground">
+                        Yanıt notu (isteğe bağlı, kaydedilmez)
+                      </Label>
+                      <Textarea
+                        id="response-note"
+                        placeholder="İsteğe bağlı not..."
+                        value={responseNote}
+                        onChange={(e) => setResponseNote(e.target.value)}
+                        className="min-h-20 resize-none"
+                      />
+                      <Button
+                        className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                        disabled={answeringId === selected.id}
+                        onClick={async () => {
+                          if (!selected) return;
+                          setAnsweringId(selected.id);
+                          try {
+                            await answerRequest(selected.id);
+                            toast.success("Talep yanıtlandı.");
+                            setResponseNote("");
+                            await loadRequests();
+                          } catch (e) {
+                            toast.error(toUserFriendlyMessage(e));
+                          } finally {
+                            setAnsweringId(null);
+                          }
+                        }}
+                      >
+                        <Send className="h-4 w-4" />
+                        {answeringId === selected.id ? "Yanıtlanıyor..." : "Yanıtla"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-border">
+                  <div className="p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-medium text-foreground">Mesajlar</p>
+                      {loadingMessages && (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      )}
+                    </div>
+                    <ScrollArea className="h-[200px]">
+                      {messages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-8 text-center">
+                          <MessageSquare className="h-8 w-8 text-muted-foreground/50" />
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Henüz mesaj yok
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3 pr-4">
+                          {messages.map((msg) => {
+                            const isCurrentUser = msg.senderUserId === user?.id;
+                            return (
+                              <div
+                                key={msg.id}
+                                className={`flex gap-2 ${
+                                  isCurrentUser ? "flex-row-reverse" : ""
+                                }`}
+                              >
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+                                </div>
+                                <div
+                                  className={`max-w-[75%] ${
+                                    isCurrentUser ? "text-right" : ""
+                                  }`}
+                                >
+                                  <div
+                                    className={`rounded-lg p-2.5 ${
+                                      isCurrentUser
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-muted"
+                                    }`}
+                                  >
+                                    <p className="text-xs whitespace-pre-wrap">
+                                      {msg.content}
+                                    </p>
+                                  </div>
+                                  <p className="mt-1 text-[10px] text-muted-foreground">
+                                    {formatDate(msg.createdAt)}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </div>
+                  <div className="border-t border-border p-4">
+                    <div className="flex gap-2">
+                      <Textarea
+                        placeholder="Mesaj yazın..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && newMessage.trim()) {
+                            e.preventDefault();
+                            handleSendMessage();
+                          }
+                        }}
+                        className="min-h-16 resize-none"
+                      />
+                      <Button
+                        onClick={handleSendMessage}
+                        disabled={!newMessage.trim() || sendingMessage}
+                        className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        <Send className="h-4 w-4" />
+                        Gönder
+                      </Button>
                     </div>
                   </div>
                 </div>
-                {selected.status === "Pending" && (
-                  <div className="space-y-3 border-t border-border pt-4">
-                    <Label htmlFor="response-note" className="text-sm text-muted-foreground">
-                      Yanıt notu (isteğe bağlı, kaydedilmez)
-                    </Label>
-                    <Textarea
-                      id="response-note"
-                      placeholder="İsteğe bağlı not..."
-                      value={responseNote}
-                      onChange={(e) => setResponseNote(e.target.value)}
-                      className="min-h-20 resize-none"
-                    />
-                    <Button
-                      className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                      disabled={answeringId === selected.id}
-                      onClick={async () => {
-                        if (!selected) return;
-                        setAnsweringId(selected.id);
-                        try {
-                          await answerRequest(selected.id);
-                          toast.success("Talep yanıtlandı.");
-                          setResponseNote("");
-                          await loadRequests();
-                        } catch (e) {
-                          toast.error(toUserFriendlyMessage(e));
-                        } finally {
-                          setAnsweringId(null);
-                        }
-                      }}
-                    >
-                      <Send className="h-4 w-4" />
-                      {answeringId === selected.id ? "Yanıtlanıyor..." : "Yanıtla"}
-                    </Button>
-                  </div>
-                )}
               </CardContent>
             </>
           ) : (
