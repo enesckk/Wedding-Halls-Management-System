@@ -20,31 +20,32 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+/** Editor-only items hidden for Viewer. Align with lib/dashboard-routes EDITOR_ONLY_PATHS. */
 const navItems = [
-  { href: "/dashboard", label: "Ana Sayfa", icon: Home, roles: ["admin", "staff"] },
-  { href: "/dashboard/takvim", label: "Takvim", icon: Calendar, roles: ["admin", "staff"] },
-  { href: "/dashboard/salonlar", label: "Salonlar", icon: Building2, roles: ["admin", "staff"] },
-  { href: "/dashboard/mesajlar", label: "Mesajlar", icon: MessageSquare, roles: ["admin", "staff"] },
-  { href: "/dashboard/talepler", label: "Talepler", icon: FileText, roles: ["admin", "staff"] },
-  { href: "/dashboard/ayarlar", label: "Ayarlar", icon: Settings, roles: ["admin"] },
+  { href: "/dashboard", label: "Ana Sayfa", icon: Home, roles: ["Editor", "Viewer"] as const },
+  { href: "/dashboard/takvim", label: "Takvim", icon: Calendar, roles: ["Editor", "Viewer"] as const },
+  { href: "/dashboard/salonlar", label: "Salonlar", icon: Building2, roles: ["Editor", "Viewer"] as const },
+  { href: "/dashboard/mesajlar", label: "Mesajlar", icon: MessageSquare, roles: ["Editor", "Viewer"] as const },
+  { href: "/dashboard/talepler", label: "Talepler", icon: FileText, roles: ["Editor"] as const },
+  { href: "/dashboard/ayarlar", label: "Ayarlar", icon: Settings, roles: ["Editor"] as const },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
-  const { currentUser, isAdmin } = useUser();
+  const { currentUser, isEditor } = useUser();
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
-      sessionStorage.removeItem("demoUserId");
+      sessionStorage.clear();
     }
     router.push("/");
   };
 
-  const filteredNavItems = navItems.filter((item) =>
-    item.roles.includes(currentUser.role)
-  );
+  const filteredNavItems = currentUser
+    ? navItems.filter((item) => item.roles.includes(currentUser.role))
+    : [];
 
   return (
     <aside
@@ -53,7 +54,6 @@ export function Sidebar() {
         collapsed ? "w-[72px]" : "w-64"
       )}
     >
-      {/* Logo */}
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         <div
           className="flex cursor-pointer items-center gap-3"
@@ -82,7 +82,6 @@ export function Sidebar() {
         </Button>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 space-y-1 p-3">
         {filteredNavItems.map((item) => {
           const isActive =
@@ -106,7 +105,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User Profile */}
       <div className="border-t border-border p-3">
         <div
           className={cn(
@@ -115,23 +113,23 @@ export function Sidebar() {
           )}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            {isAdmin ? (
+            {isEditor ? (
               <Shield className="h-4 w-4 text-primary" />
             ) : (
               <User className="h-4 w-4 text-primary" />
             )}
           </div>
-          {!collapsed && (
+          {!collapsed && currentUser && (
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="truncate text-sm font-medium text-foreground">
                   {currentUser.name}
                 </p>
                 <Badge
-                  variant={isAdmin ? "default" : "outline"}
+                  variant={isEditor ? "default" : "outline"}
                   className="text-[10px]"
                 >
-                  {isAdmin ? "Admin" : "Personel"}
+                  {isEditor ? "Editor" : "Viewer"}
                 </Badge>
               </div>
               <p className="truncate text-xs text-muted-foreground">
@@ -149,7 +147,7 @@ export function Sidebar() {
           onClick={handleLogout}
         >
           <LogOut className="h-5 w-5 shrink-0" />
-          {!collapsed && <span>Cikis Yap</span>}
+          {!collapsed && <span>Çıkış Yap</span>}
         </Button>
       </div>
     </aside>

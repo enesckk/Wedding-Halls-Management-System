@@ -1,4 +1,5 @@
-export type UserRole = "admin" | "staff";
+/** Backend-aligned: Editor = admin, Viewer = staff */
+export type UserRole = "Editor" | "Viewer";
 
 export interface WeddingHall {
   id: string;
@@ -7,13 +8,18 @@ export interface WeddingHall {
   capacity: number;
   description: string;
   imageUrl: string;
-  availability: TimeSlot[];
+  /** Mock only (Dashboard CalendarView). API halls use separate Schedule[] */
+  availability?: Array<{ id: string; timeRange: string; status: "available" | "booked" }>;
 }
 
-export interface TimeSlot {
+/** Backend Schedule: date, startTime, endTime. status: Available | Reserved */
+export interface Schedule {
   id: string;
-  timeRange: string;
-  status: "available" | "booked";
+  weddingHallId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status: "Available" | "Reserved";
 }
 
 export interface User {
@@ -24,6 +30,7 @@ export interface User {
   avatar?: string;
 }
 
+/** Mesajlar page – mock only; no Messages API */
 export interface Message {
   id: string;
   userId: string;
@@ -34,20 +41,18 @@ export interface Message {
   channel: "general" | "duyurular";
 }
 
+/** Backend-aligned: Pending | Answered. hallName joined client-side for display. */
 export interface Request {
   id: string;
-  userId: string;
-  userName: string;
-  hallId: string;
-  hallName: string;
-  date: string;
-  timeSlot: string;
-  status: "pending" | "approved" | "rejected";
+  weddingHallId: string;
+  createdByUserId: string;
   message: string;
-  responses: RequestResponse[];
-  createdAt: Date;
+  status: "Pending" | "Answered";
+  createdAt: string;
+  hallName: string;
 }
 
+/** Mesajlar – mock only; no API */
 export interface RequestResponse {
   id: string;
   userId: string;
@@ -57,6 +62,7 @@ export interface RequestResponse {
   timestamp: Date;
 }
 
+/** Takvim: Schedules displayed as calendar slots. No Events API. */
 export type EventType = "nikah" | "nisan" | "konser" | "toplanti" | "ozel";
 
 export interface Event {

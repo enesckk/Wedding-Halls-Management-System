@@ -1,33 +1,67 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from "react";
 import type { User } from "./types";
-import { users } from "./data";
+import { getCurrentUser } from "./api/auth";
+import { getToken, TOKEN_KEY } from "./api/client";
 
 interface UserContextType {
-  currentUser: User;
-  setCurrentUser: (user: User) => void;
-  isAdmin: boolean;
+  currentUser: User | null;
+  setCurrentUser: (user: User | null) => void;
+  isEditor: boolean;
+  isLoading: boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User>(users[0]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const id = sessionStorage.getItem("demoUserId");
-    if (id) {
-      const u = users.find((x) => x.id === id);
-      if (u) setCurrentUser(u);
+  const refreshUser = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setCurrentUser(null);
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const user = await getCurrentUser();
+      setCurrentUser(user);
+    } catch {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem(TOKEN_KEY);
+      }
+      setCurrentUser(null);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
-  const isAdmin = currentUser.role === "admin";
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
+
+  const isEditor = currentUser?.role === "Editor";
 
   return (
-    <UserContext.Provider value={{ currentUser, setCurrentUser, isAdmin }}>
+    <UserContext.Provider
+      value={{
+        currentUser,
+        setCurrentUser,
+        isEditor,
+        isLoading,
+        refreshUser,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );

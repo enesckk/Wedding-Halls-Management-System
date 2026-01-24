@@ -3,13 +3,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AvailabilityTable } from "@/components/availability-table";
 import { RequestModal } from "@/components/request-modal";
-import { getHallById } from "@/lib/data";
+import { getHallById } from "@/lib/api/halls";
+import { getSchedulesByHall, updateSchedule } from "@/lib/api/schedules";
 import { useUser } from "@/lib/user-context";
+import type { WeddingHall, Schedule } from "@/lib/types";
 import {
   ArrowLeft,
   Calendar,
@@ -21,29 +24,85 @@ import {
   XCircle,
   Shield,
 } from "lucide-react";
+import { toast } from "sonner";
+
+function todayLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 export default function HallDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const hall = getHallById(id);
-  const { isAdmin } = useUser();
+  const { isEditor } = useUser();
+  const [hall, setHall] = useState<WeddingHall | null>(null);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (!hall) {
-    notFound();
+  const load = useCallback(async () => {
+    try {
+      const [h, s] = await Promise.all([
+        getHallById(id),
+        getSchedulesByHall(id),
+      ]);
+      setHall(h ?? null);
+      const today = todayLocal();
+      setSchedules((s ?? []).filter((x) => x.date === today));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Veri yüklenemedi.";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleToggle = useCallback(
+    async (slot: Schedule) => {
+      if (!hall) return;
+      const newStatus = slot.status === "Available" ? "Reserved" : "Available";
+      try {
+        await updateSchedule(slot.id, {
+          weddingHallId: hall.id,
+          date: slot.date,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          status: newStatus,
+        });
+        await load();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Güncellenemedi.";
+        toast.error(msg);
+      }
+    },
+    [hall, load]
+  );
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
   }
 
-  const availableSlots = hall.availability.filter(
-    (s) => s.status === "available"
-  ).length;
-  const bookedSlots = hall.availability.filter(
-    (s) => s.status === "booked"
-  ).length;
-  const totalSlots = hall.availability.length;
-  const availabilityPercentage = Math.round((availableSlots / totalSlots) * 100);
+  if (!hall) notFound();
+
+  const availableSlots = schedules.filter((s) => s.status === "Available").length;
+  const bookedSlots = schedules.filter((s) => s.status === "Reserved").length;
+  const totalSlots = schedules.length;
+  const availabilityPercentage = totalSlots
+    ? Math.round((availableSlots / totalSlots) * 100)
+    : 0;
 
   return (
     <div className="space-y-6">
-      {/* Back Button & Title */}
       <div className="flex items-center gap-4">
         <Link href="/dashboard/salonlar">
           <Button variant="outline" size="icon" className="h-10 w-10 bg-transparent">
@@ -54,7 +113,7 @@ export default function HallDetailPage() {
           <h1 className="text-2xl font-bold text-foreground">{hall.name}</h1>
           <p className="text-muted-foreground">{hall.address}</p>
         </div>
-        {isAdmin && (
+        {isEditor && (
           <Badge className="gap-1 bg-primary/10 text-primary">
             <Shield className="h-3 w-3" />
             Düzenleme Yetkisi
@@ -62,7 +121,6 @@ export default function HallDetailPage() {
         )}
       </div>
 
-      {/* Hero Image & Quick Stats */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <div className="relative aspect-video overflow-hidden rounded-xl">
@@ -89,7 +147,6 @@ export default function HallDetailPage() {
           </div>
         </div>
 
-        {/* Quick Stats Sidebar */}
         <div className="space-y-4">
           <Card className="border-border bg-card">
             <CardContent className="p-4">
@@ -129,13 +186,11 @@ export default function HallDetailPage() {
             </Card>
           </div>
 
-          <RequestModal hallName={hall.name} />
+          <RequestModal hallId={hall.id} hallName={hall.name} />
         </div>
       </div>
 
-      {/* Info & Schedule Grid */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Hall Info */}
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
@@ -147,27 +202,19 @@ export default function HallDetailPage() {
             <div className="flex items-start gap-3">
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Adres
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">Adres</p>
                 <p className="text-foreground">{hall.address}</p>
               </div>
             </div>
-
             <div className="flex items-start gap-3">
               <Users className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
               <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Kapasite
-                </p>
+                <p className="text-sm font-medium text-muted-foreground">Kapasite</p>
                 <p className="text-foreground">{hall.capacity} Kişi</p>
               </div>
             </div>
-
             <div className="border-t border-border pt-4">
-              <p className="text-sm font-medium text-muted-foreground">
-                Açıklama
-              </p>
+              <p className="text-sm font-medium text-muted-foreground">Açıklama</p>
               <p className="mt-1 text-sm leading-relaxed text-foreground">
                 {hall.description}
               </p>
@@ -175,7 +222,6 @@ export default function HallDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Availability Schedule */}
         <Card className="border-border bg-card lg:col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -183,7 +229,7 @@ export default function HallDetailPage() {
                 <Calendar className="h-5 w-5 text-primary" />
                 Bugünkü Müsaitlik Durumu
               </CardTitle>
-              {!isAdmin && (
+              {!isEditor && (
                 <Badge variant="outline" className="text-xs">
                   Sadece Görüntüleme
                 </Badge>
@@ -191,7 +237,11 @@ export default function HallDetailPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <AvailabilityTable slots={hall.availability} canEdit={isAdmin} />
+            <AvailabilityTable
+              schedules={schedules}
+              canEdit={isEditor}
+              onToggle={isEditor ? handleToggle : undefined}
+            />
           </CardContent>
         </Card>
       </div>

@@ -1,16 +1,15 @@
 "use client";
 
-import React from "react";
-
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { users } from "@/lib/data";
-import { Building2, Lock, Mail, Shield, User } from "lucide-react";
+import { Building2, Lock, Mail } from "lucide-react";
+import { login } from "@/lib/api/auth";
+import { TOKEN_KEY } from "@/lib/api/client";
+import { toast } from "sonner";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,24 +23,23 @@ export default function LoginPage() {
     setError("");
     setIsLoading(true);
 
-    // Simulate login
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    if (email && password) {
+    try {
+      const res = await login(email, password);
+      if (!res.success || !res.token) {
+        setError(res.message ?? "Giriş başarısız.");
+        return;
+      }
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(TOKEN_KEY, res.token);
+      }
       router.push("/dashboard");
-    } else {
-      setError("Lütfen e-posta ve şifrenizi girin.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Giriş başarısız.";
+      setError(msg);
+      toast.error(msg);
+    } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleQuickLogin = async (user: (typeof users)[0]) => {
-    setIsLoading(true);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("demoUserId", user.id);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    router.push("/dashboard");
   };
 
   return (
@@ -116,48 +114,9 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Quick Login for Demo */}
-          <div className="mt-6 border-t border-border pt-6">
-            <p className="mb-3 text-center text-xs font-medium text-muted-foreground">
-              Demo Hesapları ile Hızlı Giriş
-            </p>
-            <div className="space-y-2">
-              {users.map((user) => (
-                <Button
-                  key={user.id}
-                  type="button"
-                  variant="outline"
-                  className="h-auto w-full justify-start gap-3 p-3 bg-transparent"
-                  onClick={() => handleQuickLogin(user)}
-                  disabled={isLoading}
-                >
-                  <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                      user.role === "admin" ? "bg-primary/10" : "bg-muted"
-                    }`}
-                  >
-                    {user.role === "admin" ? (
-                      <Shield className="h-4 w-4 text-primary" />
-                    ) : (
-                      <User className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{user.name}</span>
-                      <Badge
-                        variant={user.role === "admin" ? "default" : "outline"}
-                        className="text-[10px]"
-                      >
-                        {user.role === "admin" ? "Admin" : "Personel"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{user.email}</p>
-                  </div>
-                </Button>
-              ))}
-            </div>
-          </div>
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            Demo: viewer@nikahsalon.local / Viewer1! — editor@nikahsalon.local / Editor1!
+          </p>
         </CardContent>
       </Card>
     </div>

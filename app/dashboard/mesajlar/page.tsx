@@ -37,7 +37,7 @@ function formatTime(date: Date) {
 }
 
 export default function MessagesPage() {
-  const { currentUser, isAdmin } = useUser();
+  const { currentUser, isEditor } = useUser();
   const [messages, setMessages] = useState<Message[]>(mockMessages);
   const [newMessage, setNewMessage] = useState("");
   const [activeChannel, setActiveChannel] = useState<"general" | "duyurular">(
@@ -49,10 +49,8 @@ export default function MessagesPage() {
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
   const handleSendMessage = () => {
-    if (!newMessage.trim()) return;
-
-    // Only admins can post in announcements channel
-    if (activeChannel === "duyurular" && !isAdmin) return;
+    if (!newMessage.trim() || !currentUser) return;
+    if (activeChannel === "duyurular" && !isEditor) return;
 
     const message: Message = {
       id: Date.now().toString(),
@@ -103,7 +101,7 @@ export default function MessagesPage() {
             >
               <Megaphone className="h-4 w-4" />
               <span>Duyurular</span>
-              {!isAdmin && (
+              {!isEditor && (
                 <Badge variant="outline" className="ml-auto text-[10px]">
                   Sadece Oku
                 </Badge>
@@ -116,7 +114,7 @@ export default function MessagesPage() {
             <p className="text-xs text-muted-foreground">
               {activeChannel === "general"
                 ? "Tüm personel mesaj gönderebilir ve okuyabilir."
-                : "Sadece adminler duyuru yayınlayabilir."}
+                : "Sadece Editor yetkisi duyuru yayınlayabilir."}
             </p>
           </div>
         </Card>
@@ -155,19 +153,19 @@ export default function MessagesPage() {
                     <div
                       key={message.id}
                       className={`flex gap-3 ${
-                        message.userId === currentUser.id
+                        currentUser && message.userId === currentUser.id
                           ? "flex-row-reverse"
                           : ""
                       }`}
                     >
                       <div
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                          message.userRole === "admin"
+                          message.userRole === "Editor"
                             ? "bg-primary/10"
                             : "bg-muted"
                         }`}
                       >
-                        {message.userRole === "admin" ? (
+                        {message.userRole === "Editor" ? (
                           <Shield className="h-4 w-4 text-primary" />
                         ) : (
                           <User className="h-4 w-4 text-muted-foreground" />
@@ -175,12 +173,12 @@ export default function MessagesPage() {
                       </div>
                       <div
                         className={`max-w-[70%] ${
-                          message.userId === currentUser.id ? "text-right" : ""
+                          currentUser && message.userId === currentUser.id ? "text-right" : ""
                         }`}
                       >
                         <div
                           className={`flex items-center gap-2 ${
-                            message.userId === currentUser.id
+                            currentUser && message.userId === currentUser.id
                               ? "flex-row-reverse"
                               : ""
                           }`}
@@ -190,13 +188,13 @@ export default function MessagesPage() {
                           </span>
                           <Badge
                             variant={
-                              message.userRole === "admin"
+                              message.userRole === "Editor"
                                 ? "default"
                                 : "outline"
                             }
                             className="text-[10px]"
                           >
-                            {message.userRole === "admin" ? "Admin" : "Personel"}
+                            {message.userRole === "Editor" ? "Editor" : "Viewer"}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
                             {formatTime(message.timestamp)}
@@ -204,7 +202,7 @@ export default function MessagesPage() {
                         </div>
                         <div
                           className={`mt-1 rounded-lg p-3 ${
-                            message.userId === currentUser.id
+                            currentUser && message.userId === currentUser.id
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted"
                           }`}
@@ -220,10 +218,10 @@ export default function MessagesPage() {
 
             {/* Message Input */}
             <div className="border-t border-border p-4">
-              {activeChannel === "duyurular" && !isAdmin ? (
+              {activeChannel === "duyurular" && !isEditor ? (
                 <div className="rounded-lg bg-muted p-3 text-center">
                   <p className="text-sm text-muted-foreground">
-                    Sadece adminler duyuru yayınlayabilir
+                    Sadece Editor yetkisi duyuru yayınlayabilir
                   </p>
                 </div>
               ) : (
@@ -246,7 +244,7 @@ export default function MessagesPage() {
                   />
                   <Button
                     onClick={handleSendMessage}
-                    disabled={!newMessage.trim()}
+                    disabled={!newMessage.trim() || !currentUser}
                     className="gap-2"
                   >
                     <Send className="h-4 w-4" />

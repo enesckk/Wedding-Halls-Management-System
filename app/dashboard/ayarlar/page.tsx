@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { mockUser } from "@/lib/data";
+import { useUser } from "@/lib/user-context";
 import { Bell, Lock, User, Mail } from "lucide-react";
 
 export default function AyarlarPage() {
+  const { currentUser } = useUser();
+
   return (
     <div className="space-y-6">
       <div>
@@ -30,11 +32,11 @@ export default function AyarlarPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Ad Soyad</Label>
-              <Input id="name" defaultValue={mockUser.name} />
+              <Input id="name" defaultValue={currentUser?.name ?? ""} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">E-posta</Label>
-              <Input id="email" type="email" defaultValue={mockUser.email} />
+              <Input id="email" type="email" defaultValue={currentUser?.email ?? ""} />
             </div>
             <Button className="w-full">Değişiklikleri Kaydet</Button>
           </CardContent>

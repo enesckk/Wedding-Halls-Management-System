@@ -3,6 +3,7 @@
 import React from "react";
 
 import { Sidebar } from "@/components/sidebar";
+import { AuthGuard } from "@/components/auth-guard";
 import { UserProvider } from "@/lib/user-context";
 
 export default function DashboardLayout({
@@ -12,12 +13,14 @@ export default function DashboardLayout({
 }) {
   return (
     <UserProvider>
-      <div className="min-h-screen bg-background">
-        <Sidebar />
-        <main className="pl-64 transition-all duration-300">
-          <div className="p-6 lg:p-8">{children}</div>
-        </main>
-      </div>
+      <AuthGuard>
+        <div className="min-h-screen bg-background">
+          <Sidebar />
+          <main className="pl-64 transition-all duration-300">
+            <div className="p-6 lg:p-8">{children}</div>
+          </main>
+        </div>
+      </AuthGuard>
     </UserProvider>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -11,29 +10,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { TimeSlot } from "@/lib/types";
+import type { Schedule } from "@/lib/types";
 
-interface AvailabilityTableProps {
-  slots: TimeSlot[];
-  canEdit: boolean;
+function formatTimeRange(s: Schedule): string {
+  const start = s.startTime.slice(0, 5);
+  const end = s.endTime.slice(0, 5);
+  return `${start} - ${end}`;
 }
 
-export function AvailabilityTable({ slots, canEdit }: AvailabilityTableProps) {
-  const [availability, setAvailability] = useState(slots);
+interface AvailabilityTableProps {
+  schedules: Schedule[];
+  canEdit: boolean;
+  onToggle?: (schedule: Schedule) => void;
+}
 
-  const toggleStatus = (id: string) => {
-    setAvailability((prev) =>
-      prev.map((slot) =>
-        slot.id === id
-          ? {
-              ...slot,
-              status: slot.status === "available" ? "booked" : "available",
-            }
-          : slot
-      )
-    );
-  };
-
+export function AvailabilityTable({ schedules, canEdit, onToggle }: AvailabilityTableProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       <Table>
@@ -53,29 +44,29 @@ export function AvailabilityTable({ slots, canEdit }: AvailabilityTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {availability.map((slot) => (
+          {schedules.map((slot) => (
             <TableRow key={slot.id}>
               <TableCell className="font-medium text-foreground">
-                {slot.timeRange}
+                {formatTimeRange(slot)}
               </TableCell>
               <TableCell>
                 <Badge
-                  variant={slot.status === "available" ? "default" : "destructive"}
+                  variant={slot.status === "Available" ? "default" : "destructive"}
                   className={
-                    slot.status === "available"
+                    slot.status === "Available"
                       ? "bg-primary/10 text-primary hover:bg-primary/20"
                       : "bg-destructive/10 text-destructive hover:bg-destructive/20"
                   }
                 >
-                  {slot.status === "available" ? "Müsait" : "Dolu"}
+                  {slot.status === "Available" ? "Müsait" : "Dolu"}
                 </Badge>
               </TableCell>
-              {canEdit && (
+              {canEdit && onToggle && (
                 <TableCell className="text-right">
                   <Switch
-                    checked={slot.status === "available"}
-                    onCheckedChange={() => toggleStatus(slot.id)}
-                    aria-label={`${slot.timeRange} durumunu değiştir`}
+                    checked={slot.status === "Available"}
+                    onCheckedChange={() => onToggle(slot)}
+                    aria-label={`${formatTimeRange(slot)} durumunu değiştir`}
                   />
                 </TableCell>
               )}

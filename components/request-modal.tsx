@@ -14,12 +14,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { MessageSquarePlus, Send } from "lucide-react";
+import { createRequest } from "@/lib/api/requests";
+import { toast } from "sonner";
 
 interface RequestModalProps {
+  hallId: string;
   hallName: string;
 }
 
-export function RequestModal({ hallName }: RequestModalProps) {
+export function RequestModal({ hallId, hallName }: RequestModalProps) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,20 +30,22 @@ export function RequestModal({ hallName }: RequestModalProps) {
 
   const handleSubmit = async () => {
     if (!message.trim()) return;
-    
+
     setIsSubmitting(true);
-    
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    setIsSubmitting(false);
-    setSubmitted(true);
-    
-    setTimeout(() => {
-      setOpen(false);
-      setMessage("");
-      setSubmitted(false);
-    }, 2000);
+    try {
+      await createRequest({ weddingHallId: hallId, message: message.trim() });
+      setIsSubmitting(false);
+      setSubmitted(true);
+      setTimeout(() => {
+        setOpen(false);
+        setMessage("");
+        setSubmitted(false);
+      }, 2000);
+    } catch (e) {
+      setIsSubmitting(false);
+      const msg = e instanceof Error ? e.message : "Talep gönderilemedi.";
+      toast.error(msg);
+    }
   };
 
   return (
@@ -58,7 +63,7 @@ export function RequestModal({ hallName }: RequestModalProps) {
             {hallName} için talebinizi aşağıya yazın
           </DialogDescription>
         </DialogHeader>
-        
+
         {submitted ? (
           <div className="py-8 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
