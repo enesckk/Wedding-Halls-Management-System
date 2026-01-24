@@ -25,6 +25,7 @@ import {
   Send,
 } from "lucide-react";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
+import { sanitizeText } from "@/lib/utils/sanitize";
 import { toast } from "sonner";
 
 function formatDate(s: string) {
@@ -240,7 +241,7 @@ export default function RequestsPage() {
                         <StatusBadge status={r.status} />
                       </div>
                       <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                        {r.message}
+                        {sanitizeText(r.message)}
                       </p>
                     </button>
                   ))}
@@ -281,7 +282,7 @@ export default function RequestsPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Talep Mesajı</p>
                       <div className="mt-1 rounded-lg bg-muted p-3">
-                        <p className="text-sm whitespace-pre-wrap">{selected.message}</p>
+                        <p className="text-sm whitespace-pre-wrap">{sanitizeText(selected.message)}</p>
                       </div>
                     </div>
                   </div>
@@ -365,7 +366,7 @@ export default function RequestsPage() {
                                     }`}
                                   >
                                     <p className="text-xs whitespace-pre-wrap">
-                                      {msg.content}
+                                      {sanitizeText(msg.content)}
                                     </p>
                                   </div>
                                   <p className="mt-1 text-[10px] text-muted-foreground">

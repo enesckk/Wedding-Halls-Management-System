@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole } from "@/lib/utils/role";
 import { mockMessages } from "@/lib/data";
+import { sanitizeText } from "@/lib/utils/sanitize";
 import type { Message } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,7 +209,7 @@ export default function MessagesPage() {
                               : "bg-muted"
                           }`}
                         >
-                          <p className="text-sm">{message.content}</p>
+                          <p className="text-sm">{sanitizeText(message.content)}</p>
                         </div>
                       </div>
                     </div>
