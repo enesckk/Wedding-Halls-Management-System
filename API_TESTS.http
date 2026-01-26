@@ -1,0 +1,263 @@
+### Wedding Hall Management System - API Endpoint Tests
+### Use this file with REST Client extension in VS Code or import to Postman
+
+@baseUrl = http://localhost:5231
+@apiVersion = /api/v1
+
+### Variables
+@viewerToken = 
+@editorToken = 
+@hallId = 
+@scheduleId = 
+@requestId = 
+
+###############################################
+# 1. AUTH - Login (Viewer)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "viewer@nikahsalon.local",
+  "password": "Viewer1!"
+}
+
+### Save token: @viewerToken = <response.token>
+
+###############################################
+# 2. AUTH - Login (Editor)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "editor@nikahsalon.local",
+  "password": "Editor1!"
+}
+
+### Save token: @editorToken = <response.token>
+
+###############################################
+# 3. AUTH - Get Current User (Viewer)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/auth/me
+Authorization: Bearer {{viewerToken}}
+
+###############################################
+# 4. AUTH - Get Current User (Editor)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/auth/me
+Authorization: Bearer {{editorToken}}
+
+###############################################
+# 5. AUTH - Get Current User (Unauthorized - No Token)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/auth/me
+
+### Expected: 401 Unauthorized
+
+###############################################
+# 6. HALLS - Get All Halls (Viewer)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/halls
+Authorization: Bearer {{viewerToken}}
+
+### Save first hall ID: @hallId = <response[0].id>
+
+###############################################
+# 7. HALLS - Get All Halls (Editor)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/halls
+Authorization: Bearer {{editorToken}}
+
+###############################################
+# 8. HALLS - Get Hall by ID
+###############################################
+GET {{baseUrl}}{{apiVersion}}/halls/{{hallId}}
+Authorization: Bearer {{viewerToken}}
+
+###############################################
+# 9. HALLS - Get Hall by ID (Invalid ID)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/halls/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{viewerToken}}
+
+### Expected: 404 Not Found
+
+###############################################
+# 10. HALLS - Create Hall (Editor Only)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/halls
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "name": "Test Nikah Salonu",
+  "address": "Test Mah. Test Cad. No:1",
+  "capacity": 200,
+  "description": "Test salon açıklaması",
+  "imageUrl": "https://example.com/test-image.jpg"
+}
+
+###############################################
+# 11. HALLS - Create Hall (Viewer - Should Fail)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/halls
+Authorization: Bearer {{viewerToken}}
+Content-Type: application/json
+
+{
+  "name": "Unauthorized Hall",
+  "address": "Test",
+  "capacity": 100,
+  "description": "Test",
+  "imageUrl": "https://example.com/test.jpg"
+}
+
+### Expected: 403 Forbidden
+
+###############################################
+# 12. HALLS - Update Hall (Editor)
+###############################################
+PUT {{baseUrl}}{{apiVersion}}/halls/{{hallId}}
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "name": "Updated Hall Name",
+  "address": "Updated Address",
+  "capacity": 250,
+  "description": "Updated description",
+  "imageUrl": "https://example.com/updated-image.jpg"
+}
+
+###############################################
+# 13. SCHEDULES - Get Schedules by Hall
+###############################################
+GET {{baseUrl}}{{apiVersion}}/halls/{{hallId}}/schedules
+Authorization: Bearer {{viewerToken}}
+
+### Save first schedule ID: @scheduleId = <response[0].id>
+
+###############################################
+# 14. SCHEDULES - Update Schedule (Editor)
+###############################################
+PUT {{baseUrl}}{{apiVersion}}/schedules/{{scheduleId}}
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "date": "2026-02-01",
+  "startTime": "10:00",
+  "endTime": "12:00",
+  "status": 1
+}
+
+### Status: 0 = Available, 1 = Reserved
+
+###############################################
+# 15. SCHEDULES - Update Schedule (Viewer - Should Fail)
+###############################################
+PUT {{baseUrl}}{{apiVersion}}/schedules/{{scheduleId}}
+Authorization: Bearer {{viewerToken}}
+Content-Type: application/json
+
+{
+  "date": "2026-02-01",
+  "startTime": "10:00",
+  "endTime": "12:00",
+  "status": 1
+}
+
+### Expected: 403 Forbidden
+
+###############################################
+# 16. REQUESTS - Create Request (Viewer)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/requests
+Authorization: Bearer {{viewerToken}}
+Content-Type: application/json
+
+{
+  "weddingHallId": "{{hallId}}",
+  "message": "Test request message from API test"
+}
+
+### Save request ID: @requestId = <response.id>
+
+###############################################
+# 17. REQUESTS - Create Request (Unauthorized - No Token)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/requests
+Content-Type: application/json
+
+{
+  "weddingHallId": "{{hallId}}",
+  "message": "Unauthorized request"
+}
+
+### Expected: 401 Unauthorized
+
+###############################################
+# 18. REQUESTS - Get All Requests (Editor)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/requests
+Authorization: Bearer {{editorToken}}
+
+###############################################
+# 19. REQUESTS - Get All Requests (Viewer - Should Fail)
+###############################################
+GET {{baseUrl}}{{apiVersion}}/requests
+Authorization: Bearer {{viewerToken}}
+
+### Expected: 403 Forbidden
+
+###############################################
+# 20. REQUESTS - Answer Request (Editor)
+###############################################
+PUT {{baseUrl}}{{apiVersion}}/requests/{{requestId}}/answer
+Authorization: Bearer {{editorToken}}
+
+###############################################
+# 21. REQUESTS - Answer Request (Viewer - Should Fail)
+###############################################
+PUT {{baseUrl}}{{apiVersion}}/requests/{{requestId}}/answer
+Authorization: Bearer {{viewerToken}}
+
+### Expected: 403 Forbidden
+
+###############################################
+# 22. MESSAGES - Get Messages by Request ID
+###############################################
+GET {{baseUrl}}{{apiVersion}}/requests/{{requestId}}/messages
+Authorization: Bearer {{viewerToken}}
+
+###############################################
+# 23. MESSAGES - Create Message (Viewer)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/requests/{{requestId}}/messages
+Authorization: Bearer {{viewerToken}}
+Content-Type: application/json
+
+{
+  "content": "Test message from Viewer"
+}
+
+###############################################
+# 24. MESSAGES - Create Message (Editor)
+###############################################
+POST {{baseUrl}}{{apiVersion}}/requests/{{requestId}}/messages
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "content": "Test message from Editor"
+}
+
+###############################################
+# 25. SWAGGER - Should be disabled in Production
+###############################################
+GET {{baseUrl}}/swagger/index.html
+
+### Expected in Production: 404 Not Found
+### Expected in Development: 200 OK

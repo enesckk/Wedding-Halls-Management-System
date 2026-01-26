@@ -1,0 +1,6 @@
+@NikahSalon.API_HostAddress = http://localhost:5230
+
+GET {{NikahSalon.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
