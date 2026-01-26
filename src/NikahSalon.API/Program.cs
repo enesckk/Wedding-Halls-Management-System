@@ -164,7 +164,16 @@ using (var scope = app.Services.CreateScope())
     await db.Database.EnsureCreatedAsync();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
-    await SeedData.SeedAsync(db, userManager, roleManager);
+    try
+    {
+        await SeedData.SeedAsync(db, userManager, roleManager);
+    }
+    catch (Exception ex)
+    {
+        // Log seed data errors but don't stop the application
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "Seed data hatası: {Message}", ex.Message);
+    }
 }
 
 app.Run();

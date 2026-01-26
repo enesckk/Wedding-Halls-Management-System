@@ -13,32 +13,96 @@ public static class SeedData
 
     public static async Task SeedAsync(AppDbContext db, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole<Guid>> roleManager)
     {
-        if (await roleManager.RoleExistsAsync(RoleViewer)) return;
-
-        await roleManager.CreateAsync(new IdentityRole<Guid>(RoleViewer));
-        await roleManager.CreateAsync(new IdentityRole<Guid>(RoleEditor));
-
-        var viewer = new ApplicationUser
+        // Rolleri oluştur
+        if (!await roleManager.RoleExistsAsync(RoleViewer))
         {
-            Id = Guid.NewGuid(),
-            UserName = "viewer@nikahsalon.local",
-            Email = "viewer@nikahsalon.local",
-            FullName = "Demo Viewer",
-            EmailConfirmed = true
-        };
-        await userManager.CreateAsync(viewer, "Viewer1!");
-        await userManager.AddToRoleAsync(viewer, RoleViewer);
-
-        var editor = new ApplicationUser
+            await roleManager.CreateAsync(new IdentityRole<Guid>(RoleViewer));
+        }
+        if (!await roleManager.RoleExistsAsync(RoleEditor))
         {
-            Id = Guid.NewGuid(),
-            UserName = "editor@nikahsalon.local",
-            Email = "editor@nikahsalon.local",
-            FullName = "Demo Editor",
-            EmailConfirmed = true
-        };
-        await userManager.CreateAsync(editor, "Editor1!");
-        await userManager.AddToRoleAsync(editor, RoleEditor);
+            await roleManager.CreateAsync(new IdentityRole<Guid>(RoleEditor));
+        }
+
+        // Viewer kullanıcısını oluştur
+        var viewerEmail = "viewer@nikahsalon.local";
+        if (await userManager.FindByEmailAsync(viewerEmail) == null)
+        {
+            var viewer = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = viewerEmail,
+                Email = viewerEmail,
+                FullName = "Demo Viewer",
+                EmailConfirmed = true
+            };
+            var result = await userManager.CreateAsync(viewer, "Viewer1!");
+            if (result.Succeeded)
+            {
+                // SecurityStamp'i güncelle
+                await userManager.UpdateSecurityStampAsync(viewer);
+                await db.SaveChangesAsync();
+                // Kullanıcıyı ID ile tekrar yükle
+                var savedViewer = await userManager.FindByIdAsync(viewer.Id.ToString());
+                if (savedViewer != null)
+                {
+                    await userManager.AddToRoleAsync(savedViewer, RoleViewer);
+                }
+            }
+        }
+
+        // Editor kullanıcısını oluştur
+        var editorEmail = "editor@nikahsalon.local";
+        if (await userManager.FindByEmailAsync(editorEmail) == null)
+        {
+            var editor = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = editorEmail,
+                Email = editorEmail,
+                FullName = "Demo Editor",
+                EmailConfirmed = true
+            };
+            var result = await userManager.CreateAsync(editor, "Editor1!");
+            if (result.Succeeded)
+            {
+                // SecurityStamp'i güncelle
+                await userManager.UpdateSecurityStampAsync(editor);
+                await db.SaveChangesAsync();
+                // Kullanıcıyı ID ile tekrar yükle
+                var savedEditor = await userManager.FindByIdAsync(editor.Id.ToString());
+                if (savedEditor != null)
+                {
+                    await userManager.AddToRoleAsync(savedEditor, RoleEditor);
+                }
+            }
+        }
+
+        // Enes Editor kullanıcısını oluştur
+        var enesEmail = "enes@gmail.com";
+        if (await userManager.FindByEmailAsync(enesEmail) == null)
+        {
+            var enesEditor = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = enesEmail,
+                Email = enesEmail,
+                FullName = "Enes Editor",
+                EmailConfirmed = true
+            };
+            var result = await userManager.CreateAsync(enesEditor, "enes123");
+            if (result.Succeeded)
+            {
+                // Veritabanı değişikliklerini kaydet
+                await db.SaveChangesAsync();
+                // Kullanıcıyı email ile tekrar yükle (SecurityStamp için)
+                await Task.Delay(100); // Kısa bir gecikme
+                var savedEnes = await userManager.FindByEmailAsync(enesEmail);
+                if (savedEnes != null && savedEnes.SecurityStamp != null)
+                {
+                    await userManager.AddToRoleAsync(savedEnes, RoleEditor);
+                }
+            }
+        }
 
         if (await db.WeddingHalls.AnyAsync()) return;
 
