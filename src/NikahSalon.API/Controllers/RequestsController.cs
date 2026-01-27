@@ -3,9 +3,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using NikahSalon.Application.Messages.CreateMessage;
+using NikahSalon.Application.Messages.DeleteMessage;
 using NikahSalon.Application.Messages.GetMessagesByRequestId;
 using NikahSalon.Application.Requests.AnswerRequest;
 using NikahSalon.Application.Requests.CreateRequest;
+using NikahSalon.Application.Requests.DeleteRequest;
+using NikahSalon.Application.Requests.GetRequestById;
 using NikahSalon.Application.Requests.GetRequests;
 
 namespace NikahSalon.API.Controllers;
@@ -17,26 +20,35 @@ public sealed class RequestsController : ControllerBase
 {
     private readonly CreateRequestCommandHandler _createHandler;
     private readonly GetRequestsQueryHandler _getRequestsHandler;
+    private readonly GetRequestByIdQueryHandler _getRequestByIdHandler;
     private readonly AnswerRequestCommandHandler _answerHandler;
+    private readonly DeleteRequestCommandHandler _deleteHandler;
     private readonly CreateRequestCommandValidator _createValidator;
     private readonly CreateMessageCommandHandler _createMessageHandler;
+    private readonly DeleteMessageCommandHandler _deleteMessageHandler;
     private readonly GetMessagesByRequestIdQueryHandler _getMessagesHandler;
     private readonly CreateMessageCommandValidator _createMessageValidator;
 
     public RequestsController(
         CreateRequestCommandHandler createHandler,
         GetRequestsQueryHandler getRequestsHandler,
+        GetRequestByIdQueryHandler getRequestByIdHandler,
         AnswerRequestCommandHandler answerHandler,
+        DeleteRequestCommandHandler deleteHandler,
         CreateRequestCommandValidator createValidator,
         CreateMessageCommandHandler createMessageHandler,
+        DeleteMessageCommandHandler deleteMessageHandler,
         GetMessagesByRequestIdQueryHandler getMessagesHandler,
         CreateMessageCommandValidator createMessageValidator)
     {
         _createHandler = createHandler;
         _getRequestsHandler = getRequestsHandler;
+        _getRequestByIdHandler = getRequestByIdHandler;
         _answerHandler = answerHandler;
+        _deleteHandler = deleteHandler;
         _createValidator = createValidator;
         _createMessageHandler = createMessageHandler;
+        _deleteMessageHandler = deleteMessageHandler;
         _getMessagesHandler = getMessagesHandler;
         _createMessageValidator = createMessageValidator;
     }
@@ -82,11 +94,35 @@ public sealed class RequestsController : ControllerBase
     [HttpGet]
     [Authorize(Roles = "Editor")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] int? status = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = "desc",
+        CancellationToken ct = default)
     {
-        var query = new GetRequestsQuery();
-        var items = await _getRequestsHandler.HandleAsync(query, ct);
-        return Ok(items);
+        var query = new GetRequestsQuery
+        {
+            Page = page,
+            PageSize = pageSize,
+            Status = status.HasValue ? (NikahSalon.Domain.Enums.RequestStatus?)status.Value : null,
+            SortBy = sortBy,
+            SortOrder = sortOrder
+        };
+        var result = await _getRequestsHandler.HandleAsync(query, ct);
+        return Ok(result);
+    }
+
+    [HttpGet("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    {
+        var query = new GetRequestByIdQuery { Id = id };
+        var request = await _getRequestByIdHandler.HandleAsync(query, ct);
+        if (request is null) return NotFound();
+        return Ok(request);
     }
 
     [HttpPut("{id:guid}/answer")]
@@ -151,6 +187,44 @@ public sealed class RequestsController : ControllerBase
         var query = new GetMessagesByRequestIdQuery { RequestId = id };
         var items = await _getMessagesHandler.HandleAsync(query, ct);
         return Ok(items);
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Editor")]
+    [EnableRateLimiting("WritePolicy")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var command = new DeleteRequestCommand { Id = id };
+        var deleted = await _deleteHandler.HandleAsync(command, ct);
+        
+        if (!deleted)
+            return NotFound(new { success = false, message = "Request not found." });
+
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/messages/{messageId:guid}")]
+    [EnableRateLimiting("WritePolicy")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> DeleteMessage(Guid id, Guid messageId, CancellationToken ct)
+    {
+        var command = new DeleteMessageCommand 
+        { 
+            Id = messageId,
+            RequestId = id
+        };
+        var deleted = await _deleteMessageHandler.HandleAsync(command, ct);
+        
+        if (!deleted)
+            return NotFound(new { success = false, message = "Message not found or does not belong to the specified request." });
+
+        return NoContent();
     }
 }
 

@@ -36,7 +36,8 @@ public static class DependencyInjection
             o.Password.RequiredLength = 6;
         })
             .AddRoles<IdentityRole<Guid>>()
-            .AddEntityFrameworkStores<AppDbContext>();
+            .AddEntityFrameworkStores<AppDbContext>()
+            .AddRoleManager<RoleManager<IdentityRole<Guid>>>();
 
         services.AddScoped<IWeddingHallRepository, WeddingHallRepository>();
         services.AddScoped<IScheduleRepository, ScheduleRepository>();

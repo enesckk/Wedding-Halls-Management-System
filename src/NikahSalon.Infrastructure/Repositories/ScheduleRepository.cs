@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NikahSalon.Application.Interfaces;
 using NikahSalon.Domain.Entities;
+using NikahSalon.Domain.Enums;
 using NikahSalon.Infrastructure.Data;
 
 namespace NikahSalon.Infrastructure.Repositories;
@@ -50,5 +51,26 @@ public sealed class ScheduleRepository : IScheduleRepository
             query = query.Where(x => x.Id != excludeScheduleId.Value);
 
         return await query.AnyAsync(ct);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await _db.Schedules.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity == null)
+            return false;
+
+        _db.Schedules.Remove(entity);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<int> GetTotalCountAsync(CancellationToken ct = default)
+    {
+        return await _db.Schedules.CountAsync(ct);
+    }
+
+    public async Task<int> GetCountByStatusAsync(ScheduleStatus status, CancellationToken ct = default)
+    {
+        return await _db.Schedules.CountAsync(x => x.Status == status, ct);
     }
 }

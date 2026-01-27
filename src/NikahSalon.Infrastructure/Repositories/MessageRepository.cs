@@ -28,4 +28,20 @@ public sealed class MessageRepository : IMessageRepository
             .OrderBy(x => x.CreatedAt)
             .ToListAsync(ct);
     }
+
+    public async Task<Message?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        return await _db.Messages.FirstOrDefaultAsync(x => x.Id == id, ct);
+    }
+
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        var entity = await _db.Messages.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (entity == null)
+            return false;
+
+        _db.Messages.Remove(entity);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
 }

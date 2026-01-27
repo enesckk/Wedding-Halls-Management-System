@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using NikahSalon.Application.Halls.CreateHall;
+using NikahSalon.Application.Halls.DeleteHall;
 using NikahSalon.Application.Halls.GetHallById;
 using NikahSalon.Application.Halls.GetHalls;
 using NikahSalon.Application.Halls.UpdateHall;
@@ -18,6 +19,7 @@ public sealed class HallsController : ControllerBase
     private readonly GetHallByIdQueryHandler _getHallByIdHandler;
     private readonly CreateHallCommandHandler _createHandler;
     private readonly UpdateHallCommandHandler _updateHandler;
+    private readonly DeleteHallCommandHandler _deleteHandler;
     private readonly GetSchedulesByHallQueryHandler _getSchedulesHandler;
     private readonly CreateHallCommandValidator _createValidator;
     private readonly UpdateHallCommandValidator _updateValidator;
@@ -27,6 +29,7 @@ public sealed class HallsController : ControllerBase
         GetHallByIdQueryHandler getHallByIdHandler,
         CreateHallCommandHandler createHandler,
         UpdateHallCommandHandler updateHandler,
+        DeleteHallCommandHandler deleteHandler,
         GetSchedulesByHallQueryHandler getSchedulesHandler,
         CreateHallCommandValidator createValidator,
         UpdateHallCommandValidator updateValidator)
@@ -35,6 +38,7 @@ public sealed class HallsController : ControllerBase
         _getHallByIdHandler = getHallByIdHandler;
         _createHandler = createHandler;
         _updateHandler = updateHandler;
+        _deleteHandler = deleteHandler;
         _getSchedulesHandler = getSchedulesHandler;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
@@ -42,11 +46,20 @@ public sealed class HallsController : ControllerBase
 
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll(CancellationToken ct)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? search = null,
+        CancellationToken ct = default)
     {
-        var query = new GetHallsQuery();
-        var items = await _getHallsHandler.HandleAsync(query, ct);
-        return Ok(items);
+        var query = new GetHallsQuery
+        {
+            Page = page,
+            PageSize = pageSize,
+            Search = search
+        };
+        var result = await _getHallsHandler.HandleAsync(query, ct);
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
@@ -83,7 +96,8 @@ public sealed class HallsController : ControllerBase
             Address = request.Address,
             Capacity = request.Capacity,
             Description = request.Description,
-            ImageUrl = request.ImageUrl
+            ImageUrl = request.ImageUrl,
+            TechnicalDetails = request.TechnicalDetails
         };
         var validation = await _createValidator.ValidateAsync(command, ct);
         if (!validation.IsValid)
@@ -109,7 +123,8 @@ public sealed class HallsController : ControllerBase
             Address = request.Address,
             Capacity = request.Capacity,
             Description = request.Description,
-            ImageUrl = request.ImageUrl
+            ImageUrl = request.ImageUrl,
+            TechnicalDetails = request.TechnicalDetails
         };
         var validation = await _updateValidator.ValidateAsync(command, ct);
         if (!validation.IsValid)
@@ -118,6 +133,23 @@ public sealed class HallsController : ControllerBase
         var updated = await _updateHandler.HandleAsync(command, ct);
         if (updated is null) return NotFound();
         return Ok(updated);
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Editor")]
+    [EnableRateLimiting("WritePolicy")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var command = new DeleteHallCommand { Id = id };
+        var deleted = await _deleteHandler.HandleAsync(command, ct);
+        
+        if (!deleted)
+            return NotFound(new { success = false, message = "Hall not found." });
+
+        return NoContent();
     }
 }
 
@@ -128,6 +160,7 @@ public sealed class CreateHallRequest
     public int Capacity { get; set; }
     public string Description { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
+    public string TechnicalDetails { get; set; } = string.Empty;
 }
 
 public sealed class UpdateHallRequest
@@ -137,4 +170,5 @@ public sealed class UpdateHallRequest
     public int Capacity { get; set; }
     public string Description { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
+    public string TechnicalDetails { get; set; } = string.Empty;
 }

@@ -8,4 +8,5 @@ public sealed class UpdateHallCommand
     public int Capacity { get; init; }
     public string Description { get; init; } = string.Empty;
     public string ImageUrl { get; init; } = string.Empty;
+    public string TechnicalDetails { get; init; } = string.Empty;
 }

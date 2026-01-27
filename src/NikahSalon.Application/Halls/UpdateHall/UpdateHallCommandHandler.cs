@@ -22,6 +22,7 @@ public sealed class UpdateHallCommandHandler
         existing.Capacity = command.Capacity;
         existing.Description = command.Description;
         existing.ImageUrl = command.ImageUrl;
+        existing.TechnicalDetails = command.TechnicalDetails;
         await _repository.UpdateAsync(existing, ct);
         return new WeddingHallDto
         {
@@ -30,7 +31,8 @@ public sealed class UpdateHallCommandHandler
             Address = existing.Address,
             Capacity = existing.Capacity,
             Description = existing.Description,
-            ImageUrl = existing.ImageUrl
+            ImageUrl = existing.ImageUrl,
+            TechnicalDetails = existing.TechnicalDetails
         };
     }
 }

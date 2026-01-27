@@ -22,7 +22,8 @@ public sealed class CreateHallCommandHandler
             Address = command.Address,
             Capacity = command.Capacity,
             Description = command.Description,
-            ImageUrl = command.ImageUrl
+            ImageUrl = command.ImageUrl,
+            TechnicalDetails = command.TechnicalDetails
         };
         var created = await _repository.AddAsync(entity, ct);
         return new WeddingHallDto
@@ -32,7 +33,8 @@ public sealed class CreateHallCommandHandler
             Address = created.Address,
             Capacity = created.Capacity,
             Description = created.Description,
-            ImageUrl = created.ImageUrl
+            ImageUrl = created.ImageUrl,
+            TechnicalDetails = created.TechnicalDetails
         };
     }
 }

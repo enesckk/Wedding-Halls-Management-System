@@ -23,7 +23,8 @@ public sealed class GetHallByIdQueryHandler
             Address = hall.Address,
             Capacity = hall.Capacity,
             Description = hall.Description,
-            ImageUrl = hall.ImageUrl
+            ImageUrl = hall.ImageUrl,
+            TechnicalDetails = hall.TechnicalDetails
         };
     }
 }

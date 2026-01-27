@@ -8,4 +8,5 @@ public class WeddingHall
     public int Capacity { get; set; }
     public string Description { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
+    public string TechnicalDetails { get; set; } = string.Empty;
 }

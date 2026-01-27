@@ -1,3 +1,4 @@
+using NikahSalon.Application.Common;
 using NikahSalon.Application.DTOs;
 using NikahSalon.Application.Interfaces;
 
@@ -12,10 +13,35 @@ public sealed class GetRequestsQueryHandler
         _repository = repository;
     }
 
-    public async Task<IReadOnlyList<RequestDto>> HandleAsync(GetRequestsQuery query, CancellationToken ct = default)
+    public async Task<PagedResult<RequestDto>> HandleAsync(GetRequestsQuery query, CancellationToken ct = default)
     {
-        var items = await _repository.GetAllAsync(ct);
-        return items.Select(r => new RequestDto
+        // Validate pagination parameters
+        var page = query.Page < 1 ? 1 : query.Page;
+        var pageSize = query.PageSize < 1 ? 10 : query.PageSize;
+        if (pageSize > 100) pageSize = 100; // Max page size limit
+
+        // Validate sort parameters
+        var sortBy = query.SortBy;
+        var sortOrder = string.IsNullOrWhiteSpace(query.SortOrder) 
+            ? "desc" 
+            : query.SortOrder.ToLowerInvariant();
+        
+        // Validate sortBy values
+        var validSortFields = new[] { "createdat", "eventname", "eventdate", "status" };
+        if (!string.IsNullOrWhiteSpace(sortBy) && !validSortFields.Contains(sortBy.ToLowerInvariant()))
+        {
+            sortBy = null; // Use default sorting if invalid
+        }
+
+        var (items, totalCount) = await _repository.GetPagedAsync(
+            page, 
+            pageSize, 
+            query.Status, 
+            sortBy, 
+            sortOrder, 
+            ct);
+        
+        var dtos = items.Select(r => new RequestDto
         {
             Id = r.Id,
             WeddingHallId = r.WeddingHallId,
@@ -29,5 +55,16 @@ public sealed class GetRequestsQueryHandler
             EventDate = r.EventDate,
             EventTime = r.EventTime
         }).ToList();
+
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        return new PagedResult<RequestDto>
+        {
+            Items = dtos,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            TotalPages = totalPages
+        };
     }
 }
