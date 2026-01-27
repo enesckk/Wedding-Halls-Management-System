@@ -1,17 +1,68 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole } from "@/lib/utils/role";
 import { Unauthorized } from "@/components/unauthorized";
-import { Bell, Lock, User, Mail } from "lucide-react";
+import { Lock, User } from "lucide-react";
+import { getHalls } from "@/lib/api/halls";
+import { getSchedulesByHall, updateSchedule } from "@/lib/api/schedules";
+import { toast } from "sonner";
+import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 
 export default function AyarlarPage() {
   const { user, loading } = useUser();
+  const [clearingSchedules, setClearingSchedules] = useState(false);
+
+  const handleClearAllSchedules = async () => {
+    setClearingSchedules(true);
+    try {
+      const halls = await getHalls();
+      let totalUpdated = 0;
+      let totalProcessed = 0;
+
+      for (const hall of halls) {
+        try {
+          const schedules = await getSchedulesByHall(hall.id);
+          const reservedSchedules = schedules.filter((s) => s.status === "Reserved");
+          
+          for (const schedule of reservedSchedules) {
+            try {
+              await updateSchedule(schedule.id, {
+                weddingHallId: schedule.weddingHallId,
+                date: schedule.date,
+                startTime: schedule.startTime,
+                endTime: schedule.endTime,
+                status: "Available",
+              });
+              totalUpdated++;
+            } catch (e) {
+              console.error(`Error updating schedule ${schedule.id}:`, e);
+            }
+            totalProcessed++;
+          }
+        } catch (e) {
+          console.error(`Error loading schedules for hall ${hall.id}:`, e);
+        }
+      }
+
+      if (totalUpdated > 0) {
+        toast.success(`${totalUpdated} müsaitlik kaydı temizlendi.`);
+      } else {
+        toast.info("Temizlenecek müsaitlik kaydı bulunamadı.");
+      }
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setClearingSchedules(false);
+    }
+  };
+
+  // Otomatik temizleme kaldırıldı - sadece manuel buton ile yapılacak
 
   if (loading) {
     return (
@@ -56,45 +107,6 @@ export default function AyarlarPage() {
           </CardContent>
         </Card>
 
-        {/* Notification Settings */}
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-foreground">
-              <Bell className="h-5 w-5 text-primary" />
-              Bildirim Ayarları
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>E-posta Bildirimleri</Label>
-                <p className="text-sm text-muted-foreground">
-                  Yeni rezervasyonlar için e-posta al
-                </p>
-              </div>
-              <Switch defaultChecked />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>SMS Bildirimleri</Label>
-                <p className="text-sm text-muted-foreground">
-                  Acil durumlar için SMS al
-                </p>
-              </div>
-              <Switch />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Tarayıcı Bildirimleri</Label>
-                <p className="text-sm text-muted-foreground">
-                  Anlık bildirimler al
-                </p>
-              </div>
-              <Switch defaultChecked />
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Security Settings */}
         <Card className="border-border bg-card">
           <CardHeader>
@@ -122,39 +134,6 @@ export default function AyarlarPage() {
           </CardContent>
         </Card>
 
-        {/* System Settings */}
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-foreground">
-              <Mail className="h-5 w-5 text-primary" />
-              Sistem Ayarları
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Otomatik Onay</Label>
-                <p className="text-sm text-muted-foreground">
-                  Rezervasyonları otomatik onayla
-                </p>
-              </div>
-              <Switch />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Bakım Modu</Label>
-                <p className="text-sm text-muted-foreground">
-                  Sistemi bakım moduna al
-                </p>
-              </div>
-              <Switch />
-            </div>
-            <div className="space-y-2">
-              <Label>Varsayılan Salon Kapasitesi</Label>
-              <Input type="number" defaultValue="100" />
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

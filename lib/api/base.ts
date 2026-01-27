@@ -21,6 +21,14 @@ type ErrorBody = { message?: string; errors?: string[] };
  */
 export async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const base = getBaseUrl().replace(/\/$/, "");
+  
+  // Check if API URL is configured
+  if (!base) {
+    const error = new Error("API URL yapılandırılmamış. NEXT_PUBLIC_API_URL ortam değişkenini kontrol edin.");
+    error.name = "ConfigurationError";
+    throw error;
+  }
+  
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   const { skipAuth, ...init } = options;
 
@@ -68,25 +76,30 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
       throw error;
     }
     
-    // Check if it's a connection error - more comprehensive check
+    // Check if it's a connection error - more specific check
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorName = error instanceof Error ? error.name : "";
-    const errorString = String(error);
     
-    // Check various network error patterns
+    // Only treat as network error if it's specifically a fetch/network failure
+    // Don't treat all TypeErrors as network errors - only those related to fetch
     const isNetworkErr = 
+      errorName === "TypeError" && (
+        errorMessage.includes("Failed to fetch") ||
+        errorMessage.includes("fetch failed") ||
+        errorMessage.includes("NetworkError") ||
+        errorMessage.includes("ERR_CONNECTION_REFUSED") ||
+        errorMessage.includes("ERR_NETWORK") ||
+        errorMessage.includes("ERR_INTERNET_DISCONNECTED")
+      ) ||
       errorMessage.includes("Failed to fetch") ||
       errorMessage.includes("ERR_CONNECTION_REFUSED") ||
       errorMessage.includes("NetworkError") ||
       errorMessage.includes("Network request failed") ||
       errorMessage.includes("fetch failed") ||
-      errorString.includes("ERR_CONNECTION_REFUSED") ||
-      errorString.includes("Failed to fetch") ||
-      errorName === "NetworkError" ||
-      errorName === "TypeError"; // fetch() throws TypeError on network errors
+      errorName === "NetworkError";
     
     if (isNetworkErr) {
-      const networkError = new Error("ERR_CONNECTION_REFUSED");
+      const networkError = new Error("Backend API'ye bağlanılamıyor. Lütfen backend'in çalıştığından emin olun.");
       networkError.name = "NetworkError";
       throw networkError;
     }

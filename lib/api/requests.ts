@@ -18,9 +18,6 @@ type RequestDto = {
 };
 
 function toRequest(d: RequestDto): Request {
-  // Debug: Status değerini kontrol et
-  console.log("toRequest - raw status:", d.status, typeof d.status);
-  
   // Status hem number hem de string olabilir (backend enum serialization'a bağlı)
   let statusNum: number;
   if (typeof d.status === "string") {
@@ -82,9 +79,84 @@ type PagedResult<T> = {
 };
 
 export async function getRequests(): Promise<Request[]> {
-  const result = await fetchApi<PagedResult<RequestDto>>(REQUESTS);
-  const items = result?.items ?? result?.Items ?? [];
-  return Array.isArray(items) ? items.map(toRequest) : [];
+  try {
+    // İlk sayfayı al ve response formatını kontrol et
+    const firstPageResult = await fetchApi<PagedResult<RequestDto>>(
+      `${REQUESTS}?page=1&pageSize=100`
+    );
+    
+    // Debug: Response'u kontrol et
+    console.log("getRequests - First page response:", {
+      result: firstPageResult,
+      hasItems: !!firstPageResult?.items,
+      hasItemsPascal: !!firstPageResult?.Items,
+      itemsLength: firstPageResult?.items?.length,
+      ItemsLength: firstPageResult?.Items?.length,
+      totalCount: firstPageResult?.TotalCount ?? firstPageResult?.totalCount,
+    });
+    
+    // Backend response formatını kontrol et - backend PascalCase kullanıyor
+    const items = firstPageResult?.Items ?? firstPageResult?.items ?? [];
+    
+    if (!Array.isArray(items)) {
+      console.error("getRequests - Items is not an array:", items);
+      return [];
+    }
+    
+    // Eğer tek sayfada tüm veriler varsa direkt döndür
+    const totalCount = firstPageResult?.TotalCount ?? firstPageResult?.totalCount ?? items.length;
+    const totalPages = firstPageResult?.TotalPages ?? firstPageResult?.totalPages ?? 1;
+    
+    console.log(`getRequests - Page info:`, {
+      itemsCount: items.length,
+      totalCount,
+      totalPages,
+    });
+    
+    // Eğer tek sayfada tüm veriler varsa direkt döndür
+    if (totalPages <= 1 || items.length >= totalCount) {
+      console.log(`getRequests - All items in first page, returning ${items.length} items`);
+      return items.map(toRequest);
+    }
+    
+    // Birden fazla sayfa varsa tüm sayfaları al
+    const allItems: RequestDto[] = [...items];
+    let page = 2;
+    const maxPages = Math.min(totalPages, 100); // Güvenlik için maksimum sayfa limiti
+    
+    while (page <= maxPages) {
+      try {
+        const result = await fetchApi<PagedResult<RequestDto>>(
+          `${REQUESTS}?page=${page}&pageSize=100`
+        );
+        
+        const pageItems = result?.Items ?? result?.items ?? [];
+        
+        if (Array.isArray(pageItems) && pageItems.length > 0) {
+          allItems.push(...pageItems);
+          page++;
+        } else {
+          // Boş sayfa - döngüyü durdur
+          break;
+        }
+      } catch (error) {
+        // Sonraki sayfalarda hata varsa, mevcut verileri döndür
+        console.warn(`Error loading page ${page} of requests, returning partial results:`, error);
+        break;
+      }
+    }
+
+    console.log(`getRequests - Total items loaded: ${allItems.length}`);
+    return allItems.map(toRequest);
+  } catch (error) {
+    console.error("Error in getRequests:", error);
+    // Hata detaylarını göster
+    if (error instanceof Error) {
+      console.error("Error details:", error.message, error.stack);
+    }
+    // Hata durumunda boş array döndür, sayfa çökmesin
+    return [];
+  }
 }
 
 export async function answerRequest(id: string): Promise<Request> {
@@ -101,9 +173,10 @@ export async function approveRequest(id: string): Promise<Request> {
   return toRequest(d);
 }
 
-export async function rejectRequest(id: string): Promise<Request> {
+export async function rejectRequest(id: string, reason?: string): Promise<Request> {
   const d = await fetchApi<RequestDto>(`${REQUESTS}/${id}/reject`, {
     method: "PUT",
+    body: JSON.stringify({ reason: reason || "" }),
   });
   return toRequest(d);
 }

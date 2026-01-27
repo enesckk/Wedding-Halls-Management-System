@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { createHall, updateHall } from "@/lib/api/halls";
 import type { CreateHallData, UpdateHallData } from "@/lib/api/halls";
 import type { WeddingHall } from "@/lib/types";
@@ -39,6 +40,30 @@ const emptyForm: CreateHallData = {
   technicalDetails: "",
 };
 
+// Nikah salonu için teknik detay seçenekleri
+const TECHNICAL_DETAILS_OPTIONS = [
+  { id: "ses-sistemi", label: "Ses Sistemi" },
+  { id: "isiklandirma", label: "Işıklandırma" },
+  { id: "projeksiyon", label: "Projeksiyon/Perde" },
+  { id: "mikrofon", label: "Mikrofon" },
+  { id: "muzik-sistemi", label: "Müzik Sistemi" },
+  { id: "wifi", label: "WiFi İnternet" },
+  { id: "klima", label: "Klima" },
+  { id: "park-yeri", label: "Park Yeri" },
+  { id: "asansor", label: "Asansör" },
+  { id: "engelli-erisim", label: "Engelli Erişimi" },
+  { id: "mutfak", label: "Mutfak" },
+  { id: "bufe-alani", label: "Büfe Alanı" },
+  { id: "dans-pisti", label: "Dans Pisti" },
+  { id: "dekorasyon", label: "Dekorasyon Hizmeti" },
+  { id: "güvenlik", label: "Güvenlik" },
+  { id: "temizlik", label: "Temizlik Hizmeti" },
+  { id: "ses-yalitimi", label: "Ses Yalıtımı" },
+  { id: "hazirlik-odasi", label: "Hazırlık Odası" },
+  { id: "vestiyer", label: "Vestiyer" },
+  { id: "tuvalet", label: "Tuvalet" },
+];
+
 export function HallFormModal({
   open,
   onOpenChange,
@@ -49,6 +74,7 @@ export function HallFormModal({
   const [form, setForm] = useState<CreateHallData>(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [selectedTechnicalDetails, setSelectedTechnicalDetails] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,6 +102,36 @@ export function HallFormModal({
     reader.readAsDataURL(file);
   };
 
+  // Teknik detayları string'den Set'e çevir (label'lardan ID'leri bul)
+  const parseTechnicalDetails = (details: string): Set<string> => {
+    if (!details) return new Set();
+    const foundIds = new Set<string>();
+    const items = details.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    
+    // Her item için label'a göre ID bul
+    items.forEach(item => {
+      const option = TECHNICAL_DETAILS_OPTIONS.find(
+        opt => opt.label.toLowerCase() === item.toLowerCase() || opt.id === item
+      );
+      if (option) {
+        foundIds.add(option.id);
+      }
+    });
+    
+    return foundIds;
+  };
+
+  // Set'i string'e çevir (ID'lerden label'ları al)
+  const formatTechnicalDetails = (selected: Set<string>): string => {
+    const labels = Array.from(selected)
+      .map(id => {
+        const option = TECHNICAL_DETAILS_OPTIONS.find(opt => opt.id === id);
+        return option ? option.label : id;
+      })
+      .filter(Boolean);
+    return labels.join(", ");
+  };
+
   useEffect(() => {
     if (open) {
       if (mode === "update" && initialHall) {
@@ -88,15 +144,34 @@ export function HallFormModal({
           technicalDetails: initialHall.technicalDetails || "",
         });
         setImagePreview(initialHall.imageUrl || "");
+        // Mevcut teknik detayları parse et
+        const existingDetails = parseTechnicalDetails(initialHall.technicalDetails || "");
+        setSelectedTechnicalDetails(existingDetails);
       } else {
         setForm(emptyForm);
         setImagePreview("");
+        setSelectedTechnicalDetails(new Set());
       }
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     }
   }, [open, mode, initialHall]);
+
+  const handleTechnicalDetailToggle = (detailId: string) => {
+    const newSelected = new Set(selectedTechnicalDetails);
+    if (newSelected.has(detailId)) {
+      newSelected.delete(detailId);
+    } else {
+      newSelected.add(detailId);
+    }
+    setSelectedTechnicalDetails(newSelected);
+    // Form state'ini de güncelle
+    setForm((p) => ({
+      ...p,
+      technicalDetails: formatTechnicalDetails(newSelected),
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,15 +181,21 @@ export function HallFormModal({
       return;
     }
 
+    // Seçilen teknik detayları form'a ekle
+    const finalForm = {
+      ...form,
+      technicalDetails: formatTechnicalDetails(selectedTechnicalDetails),
+    };
+
     setIsSubmitting(true);
     try {
       if (mode === "create") {
-        const created = await createHall(form);
+        const created = await createHall(finalForm);
         toast.success("Salon oluşturuldu.");
         await onSuccess(created);
         onOpenChange(false);
       } else if (initialHall) {
-        const updated = await updateHall(initialHall.id, form);
+        const updated = await updateHall(initialHall.id, finalForm);
         toast.success("Salon güncellendi.");
         await onSuccess(updated);
         onOpenChange(false);
@@ -134,12 +215,14 @@ export function HallFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0 border-b">
           <DialogTitle className="text-foreground">{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-6">
+            <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="hall-name">Ad</Label>
             <Input
@@ -257,17 +340,44 @@ export function HallFormModal({
           </div>
           <div className="space-y-2">
             <Label htmlFor="hall-technicalDetails">Teknik Detaylar</Label>
-            <Textarea
-              id="hall-technicalDetails"
-              value={form.technicalDetails}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, technicalDetails: e.target.value }))
-              }
-              placeholder="Teknik özellikler, ekipmanlar, özel notlar..."
-              className="min-h-24 resize-none"
-            />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 rounded-lg border p-4">
+                {TECHNICAL_DETAILS_OPTIONS.map((option) => (
+                  <div key={option.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`tech-${option.id}`}
+                      checked={selectedTechnicalDetails.has(option.id)}
+                      onCheckedChange={() => handleTechnicalDetailToggle(option.id)}
+                    />
+                    <label
+                      htmlFor={`tech-${option.id}`}
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                    >
+                      {option.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+              <Textarea
+                id="hall-technicalDetails"
+                value={form.technicalDetails}
+                onChange={(e) => {
+                  setForm((p) => ({ ...p, technicalDetails: e.target.value }));
+                  // Manuel giriş yapılırsa selectedTechnicalDetails'i güncelle
+                  const parsed = parseTechnicalDetails(e.target.value);
+                  setSelectedTechnicalDetails(parsed);
+                }}
+                placeholder="Ek teknik detaylar veya özel notlar (isteğe bağlı)..."
+                className="min-h-20 resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                Yukarıdaki seçeneklerden seçim yapabilir veya manuel olarak ek bilgi girebilirsiniz.
+              </p>
+            </div>
           </div>
-          <DialogFooter>
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-6 pt-4 border-t flex-shrink-0 bg-background">
             <Button
               type="button"
               variant="outline"

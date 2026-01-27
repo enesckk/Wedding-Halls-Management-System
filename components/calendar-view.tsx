@@ -81,25 +81,42 @@ export function CalendarView() {
     return schedules.filter((s) => s.date === todayStr);
   }, [schedules, todayStr]);
 
+  // Bugünkü rezervasyon sayısı (sadece Reserved olanlar)
   const todayReserved = useMemo(
     () => schedulesToday.filter((s) => s.status === "Reserved").length,
     [schedulesToday]
   );
-  const todayAvailable = useMemo(
-    () => schedulesToday.filter((s) => s.status === "Available").length,
-    [schedulesToday]
-  );
-  const totalCapacity = useMemo(
-    () => halls.reduce((acc, h) => acc + h.capacity, 0),
-    [halls]
-  );
+
+  // Müsait saat sayısı: Tüm salonlar × Tüm saatler - Reserved olanlar
+  // Schedule yoksa varsayılan olarak müsait kabul et
+  const todayAvailable = useMemo(() => {
+    if (halls.length === 0) return 0;
+    
+    // Tüm salonlar için tüm saatler = toplam slot sayısı
+    const totalSlots = halls.length * SLOTS.length;
+    
+    // Bugünkü Reserved schedule sayısı
+    const reservedCount = schedulesToday.filter((s) => s.status === "Reserved").length;
+    
+    // Müsait saat = Toplam slot - Reserved
+    return Math.max(0, totalSlots - reservedCount);
+  }, [halls, schedulesToday]);
+
+  // Toplam kapasite (güvenli hesaplama)
+  const totalCapacity = useMemo(() => {
+    if (!halls || halls.length === 0) return 0;
+    return halls.reduce((acc, h) => acc + (h.capacity || 0), 0);
+  }, [halls]);
 
   const getSlotStatus = useCallback(
     (hallId: string, slotTime: string): "available" | "booked" => {
+      if (!schedulesForDate || schedulesForDate.length === 0) {
+        return "available"; // Schedule yoksa varsayılan olarak müsait
+      }
       const s = schedulesForDate.find(
         (x) => x.weddingHallId === hallId && x.startTime.slice(0, 5) === slotTime
       );
-      if (!s) return "available";
+      if (!s) return "available"; // Schedule yoksa varsayılan olarak müsait
       return s.status === "Reserved" ? "booked" : "available";
     },
     [schedulesForDate]
@@ -156,17 +173,19 @@ export function CalendarView() {
   const days = getDaysInMonth(currentDate);
 
   const todayReservations = useMemo(
-    () =>
-      schedulesToday
+    () => {
+      if (!schedulesToday || schedulesToday.length === 0) return [];
+      return schedulesToday
         .filter((s) => s.status === "Reserved")
         .map((s) => ({
           hallId: s.weddingHallId,
-          hallName: s.hallName,
+          hallName: s.hallName || "Bilinmeyen Salon",
           timeRange: `${s.startTime.slice(0, 5)} - ${s.endTime.slice(0, 5)}`,
           capacity: halls.find((h) => h.id === s.weddingHallId)?.capacity ?? 0,
         }))
         .sort((a, b) => a.timeRange.localeCompare(b.timeRange))
-        .slice(0, 5),
+        .slice(0, 5);
+    },
     [schedulesToday, halls]
   );
 
@@ -204,7 +223,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {todayReserved}
+                  {todayReserved ?? 0}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Bugünkü Rezervasyon
@@ -222,7 +241,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {todayAvailable}
+                  {todayAvailable ?? 0}
                 </p>
                 <p className="text-sm text-muted-foreground">Müsait Saat</p>
               </div>
@@ -238,7 +257,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {totalCapacity}
+                  {totalCapacity ?? 0}
                 </p>
                 <p className="text-sm text-muted-foreground">Toplam Kapasite</p>
               </div>
@@ -254,7 +273,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {halls.length}
+                  {halls?.length ?? 0}
                 </p>
                 <p className="text-sm text-muted-foreground">Aktif Salon</p>
               </div>

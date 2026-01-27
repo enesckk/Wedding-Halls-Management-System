@@ -70,23 +70,22 @@ async function mockLogin(email: string, password: string): Promise<LoginResult> 
 
 export async function login(email: string, password: string): Promise<LoginResult> {
   try {
-    return await fetchApi<LoginResult>(`${AUTH}/login`, {
+    const result = await fetchApi<LoginResult>(`${AUTH}/login`, {
       method: "POST",
       body: JSON.stringify({ email, password }),
       skipAuth: true,
     });
+    return result;
   } catch (error) {
-    // If backend is not available (connection refused, etc.), use mock login
+    // Only use mock login for actual network errors, not API errors (400, 401, etc.)
     if (
       error instanceof Error &&
-      (error.message.includes("Failed to fetch") ||
-        error.message.includes("ERR_CONNECTION_REFUSED") ||
-        error.message.includes("NetworkError") ||
-        error.name === "NetworkError")
+      error.name === "NetworkError"
     ) {
       console.warn("Backend API not available, using mock authentication");
       return mockLogin(email, password);
     }
+    // Re-throw API errors (400, 401, 500, etc.) as-is
     throw error;
   }
 }
@@ -115,17 +114,15 @@ export async function getCurrentUser(): Promise<User> {
     const d = await fetchApi<UserInfoDto>(`${AUTH}/me`);
     return toUser(d);
   } catch (error) {
-    // If backend is not available, use mock user
+    // Only use mock user for actual network errors, not auth errors (401, etc.)
     if (
       error instanceof Error &&
-      (error.message.includes("Failed to fetch") ||
-        error.message.includes("ERR_CONNECTION_REFUSED") ||
-        error.message.includes("NetworkError") ||
-        error.name === "NetworkError")
+      error.name === "NetworkError"
     ) {
       console.warn("Backend API not available, using mock user data");
       return mockGetCurrentUser();
     }
+    // Re-throw auth errors (401, etc.) as-is
     throw error;
   }
 }

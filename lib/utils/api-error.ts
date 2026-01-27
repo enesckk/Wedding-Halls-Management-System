@@ -29,8 +29,18 @@ export function toUserFriendlyMessage(err: unknown): string {
   if (err instanceof ApiError) {
     return err.message;
   }
-  if (err instanceof Error && err.message) {
-    return err.message;
+  if (err instanceof Error) {
+    // Handle network errors specifically
+    if (err.name === "NetworkError" || err.message.includes("bağlanılamıyor")) {
+      return "Backend API'ye bağlanılamıyor. Lütfen backend'in çalıştığından emin olun.";
+    }
+    // Handle configuration errors
+    if (err.name === "ConfigurationError") {
+      return err.message;
+    }
+    if (err.message) {
+      return err.message;
+    }
   }
   return FALLBACK_MESSAGE;
 }

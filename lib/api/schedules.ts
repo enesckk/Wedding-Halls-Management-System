@@ -37,6 +37,21 @@ export async function getSchedulesByHall(hallId: string): Promise<Schedule[]> {
   return (list ?? []).map(toSchedule);
 }
 
+export async function createSchedule(data: UpdateScheduleData): Promise<Schedule> {
+  const body = {
+    weddingHallId: data.weddingHallId,
+    date: data.date,
+    startTime: data.startTime,
+    endTime: data.endTime,
+    status: data.status === "Available" ? 0 : 1,
+  };
+  const d = await fetchApi<ScheduleDto>(SCHEDULES, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return toSchedule(d);
+}
+
 export async function updateSchedule(id: string, data: UpdateScheduleData): Promise<Schedule> {
   const body = {
     weddingHallId: data.weddingHallId,

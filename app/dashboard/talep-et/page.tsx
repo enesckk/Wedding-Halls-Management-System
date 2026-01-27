@@ -81,6 +81,32 @@ export default function TalepEtPage() {
       return;
     }
 
+    // Geçmiş tarih kontrolü
+    const selectedDate = new Date(formData.eventDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    selectedDate.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+      toast.error("Geçmiş bir tarih seçemezsiniz. Lütfen bugün veya gelecekteki bir tarih seçin.");
+      return;
+    }
+
+    // Bugün seçildiyse saat kontrolü
+    if (selectedDate.getTime() === today.getTime()) {
+      const selectedTime = formData.eventTime.split(":");
+      const selectedHour = parseInt(selectedTime[0]);
+      const selectedMinute = parseInt(selectedTime[1]);
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      
+      if (selectedHour < currentHour || (selectedHour === currentHour && selectedMinute <= currentMinute)) {
+        toast.error("Geçmiş bir saat seçemezsiniz. Lütfen gelecekteki bir saat seçin.");
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       await createRequest({
@@ -237,6 +263,7 @@ export default function TalepEtPage() {
                       setFormData({ ...formData, eventDate: e.target.value })
                     }
                     className="pl-10"
+                    min={new Date().toISOString().split("T")[0]}
                     required
                   />
                 </div>

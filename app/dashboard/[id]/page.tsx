@@ -37,8 +37,8 @@ import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { hasOverlap } from "@/lib/utils/schedule-overlap";
 import { toast } from "sonner";
 
-function todayLocal(): string {
-  const d = new Date();
+function todayLocal(date?: Date): string {
+  const d = date || new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -51,6 +51,7 @@ export default function HallDetailPage() {
   const { isEditor, user } = useUser();
   const [hall, setHall] = useState<WeddingHall | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [allSchedules, setAllSchedules] = useState<Schedule[]>([]); // Tüm schedule'ları sakla
   const [loading, setLoading] = useState(true);
   const [updateOpen, setUpdateOpen] = useState(false);
 
@@ -61,8 +62,31 @@ export default function HallDetailPage() {
         getSchedulesByHall(id),
       ]);
       setHall(h ?? null);
+      const allScheds = s ?? [];
+      setAllSchedules(allScheds); // Tüm schedule'ları sakla (müsaitlik oranı için)
+      
+      // Bugünün schedule'larını göster
       const today = todayLocal();
-      setSchedules((s ?? []).filter((x) => x.date === today));
+      const todaySchedules = allScheds.filter((x) => x.date === today);
+      
+      // Eğer bugün için schedule varsa sadece bugünü göster
+      if (todaySchedules.length > 0) {
+        setSchedules(todaySchedules);
+      } else {
+        // Bugün için schedule yoksa, en yakın tarihleri göster (gelecek 7 gün)
+        const next7Days = Array.from({ length: 7 }, (_, i) => {
+          const date = new Date();
+          date.setDate(date.getDate() + i);
+          return todayLocal(date);
+        });
+        const upcomingSchedules = allScheds.filter((x) => 
+          next7Days.includes(x.date)
+        ).sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return a.startTime.localeCompare(b.startTime);
+        });
+        setSchedules(upcomingSchedules);
+      }
     } catch (e) {
       toast.error(toUserFriendlyMessage(e));
     } finally {
@@ -121,12 +145,33 @@ export default function HallDetailPage() {
 
   if (!hall) notFound();
 
-  const availableSlots = schedules.filter((s) => s.status === "Available").length;
-  const bookedSlots = schedules.filter((s) => s.status === "Reserved").length;
-  const totalSlots = schedules.length;
-  const availabilityPercentage = totalSlots
+  // Standart saat dilimleri (takvim sayfasıyla aynı)
+  const TIME_SLOTS = ["09:00", "10:30", "12:00", "14:00", "15:30", "17:00"];
+  const STANDARD_SLOTS_PER_DAY = TIME_SLOTS.length; // 6 saat dilimi
+  
+  // Bugünkü schedule'lar için ayrı istatistikler
+  const today = todayLocal();
+  const todaySchedules = allSchedules.filter((s) => s.date === today);
+  const todayBookedSlots = todaySchedules.filter((s) => s.status === "Reserved").length;
+  
+  // Schedule yoksa varsayılan olarak müsait kabul et
+  // Bugün için toplam slot sayısı: STANDARD_SLOTS_PER_DAY (6)
+  // Müsait slot = Toplam slot - Dolu slot
+  const todayTotalSlots = todaySchedules.length > 0 ? todaySchedules.length : STANDARD_SLOTS_PER_DAY;
+  const todayAvailableSlots = Math.max(0, todayTotalSlots - todayBookedSlots);
+  
+  // Müsaitlik oranını tüm schedule'lara göre hesapla
+  // Schedule yoksa varsayılan olarak %100 müsait
+  const availableSlots = allSchedules.filter((s) => s.status === "Available").length;
+  const bookedSlots = allSchedules.filter((s) => s.status === "Reserved").length;
+  const totalSlots = allSchedules.length;
+  
+  // Schedule yoksa varsayılan olarak %100 müsait göster
+  // Varsa: (Müsait / Toplam) * 100
+  // Yoksa: %100 (tüm slotlar müsait kabul edilir)
+  const availabilityPercentage = totalSlots > 0
     ? Math.round((availableSlots / totalSlots) * 100)
-    : 0;
+    : 100; // Schedule yoksa %100 müsait
 
   return (
     <div className="space-y-6">
@@ -167,7 +212,7 @@ export default function HallDetailPage() {
                 </Badge>
                 <Badge className="bg-card/90 text-foreground backdrop-blur-sm">
                   <Clock className="mr-1 h-3 w-3" />
-                  {totalSlots} Saat Dilimi
+                  {todaySchedules.length > 0 ? todaySchedules.length : STANDARD_SLOTS_PER_DAY} Saat Dilimi
                 </Badge>
               </div>
             </div>
@@ -197,18 +242,18 @@ export default function HallDetailPage() {
               <CardContent className="p-4 text-center">
                 <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-600" />
                 <div className="text-2xl font-bold text-green-700">
-                  {availableSlots}
+                  {todayAvailableSlots}
                 </div>
-                <p className="text-xs text-green-600">Müsait</p>
+                <p className="text-xs text-green-600">Müsait (Bugün)</p>
               </CardContent>
             </Card>
             <Card className="border-red-200 bg-red-50">
               <CardContent className="p-4 text-center">
                 <XCircle className="mx-auto mb-2 h-8 w-8 text-red-600" />
                 <div className="text-2xl font-bold text-red-700">
-                  {bookedSlots}
+                  {todayBookedSlots}
                 </div>
-                <p className="text-xs text-red-600">Dolu</p>
+                <p className="text-xs text-red-600">Dolu (Bugün)</p>
               </CardContent>
             </Card>
           </div>
@@ -279,7 +324,9 @@ export default function HallDetailPage() {
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-foreground">
                 <Calendar className="h-5 w-5 text-primary" />
-                Bugünkü Müsaitlik Durumu
+                {schedules.length > 0 && schedules[0].date === todayLocal() 
+                  ? "Bugünkü Müsaitlik Durumu" 
+                  : "Müsaitlik Durumu"}
               </CardTitle>
               {!isEditor && (
                 <Badge variant="outline" className="text-xs">
@@ -289,11 +336,23 @@ export default function HallDetailPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <AvailabilityTable
-              schedules={schedules}
-              canEdit={isEditor}
-              onToggle={isEditor ? handleToggle : undefined}
-            />
+            {schedules.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Calendar className="h-12 w-12 text-muted-foreground/50 mb-3" />
+                <p className="text-sm font-medium text-foreground">
+                  Müsaitlik Kaydı Bulunamadı
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Bu salon için henüz müsaitlik kaydı oluşturulmamış
+                </p>
+              </div>
+            ) : (
+              <AvailabilityTable
+                schedules={schedules}
+                canEdit={isEditor}
+                onToggle={isEditor ? handleToggle : undefined}
+              />
+            )}
           </CardContent>
         </Card>
       </div>
