@@ -1,80 +1,128 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { weddingHalls } from "@/lib/data";
+import { getHalls } from "@/lib/api/halls";
+import { getSchedulesByHall } from "@/lib/api/schedules";
+import type { Schedule, WeddingHall } from "@/lib/types";
+import { toUserFriendlyMessage } from "@/lib/utils/api-error";
+import { toast } from "sonner";
 import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
   Users,
   MapPin,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const timeSlots = [
-  "09:00",
-  "10:30",
-  "12:00",
-  "14:00",
-  "15:30",
-  "17:00",
-];
-
+const SLOTS = ["09:00", "10:30", "12:00", "14:00", "15:30", "17:00"];
 const daysOfWeek = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 const monthNames = [
-  "Ocak",
-  "Şubat",
-  "Mart",
-  "Nisan",
-  "Mayıs",
-  "Haziran",
-  "Temmuz",
-  "Ağustos",
-  "Eylül",
-  "Ekim",
-  "Kasım",
-  "Aralık",
+  "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 ];
+
+function formatDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+type ScheduleWithHall = Schedule & { hallName: string };
 
 export function CalendarView() {
   const router = useRouter();
+  const [halls, setHalls] = useState<WeddingHall[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleWithHall[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const h = await getHalls();
+      setHalls(h ?? []);
+      const all: ScheduleWithHall[] = [];
+      for (const hall of h ?? []) {
+        const list = await getSchedulesByHall(hall.id);
+        for (const s of list ?? []) {
+          all.push({ ...s, hallName: hall.name });
+        }
+      }
+      setSchedules(all);
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const todayStr = useMemo(() => formatDateString(new Date()), []);
+  const selectedStr = selectedDate ? formatDateString(selectedDate) : null;
+
+  const schedulesForDate = useMemo(() => {
+    if (!selectedStr) return [];
+    return schedules.filter((s) => s.date === selectedStr);
+  }, [schedules, selectedStr]);
+
+  const schedulesToday = useMemo(() => {
+    return schedules.filter((s) => s.date === todayStr);
+  }, [schedules, todayStr]);
+
+  const todayReserved = useMemo(
+    () => schedulesToday.filter((s) => s.status === "Reserved").length,
+    [schedulesToday]
+  );
+  const todayAvailable = useMemo(
+    () => schedulesToday.filter((s) => s.status === "Available").length,
+    [schedulesToday]
+  );
+  const totalCapacity = useMemo(
+    () => halls.reduce((acc, h) => acc + h.capacity, 0),
+    [halls]
+  );
+
+  const getSlotStatus = useCallback(
+    (hallId: string, slotTime: string): "available" | "booked" => {
+      const s = schedulesForDate.find(
+        (x) => x.weddingHallId === hallId && x.startTime.slice(0, 5) === slotTime
+      );
+      if (!s) return "available";
+      return s.status === "Reserved" ? "booked" : "available";
+    },
+    [schedulesForDate]
+  );
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const days: Date[] = [];
-
-    // Get the day of the week of the first day (0 = Sunday, 1 = Monday, etc.)
     let startDay = firstDay.getDay();
-    // Convert to Monday-based (0 = Monday)
     startDay = startDay === 0 ? 6 : startDay - 1;
-
-    // Add days from previous month
+    const days: Date[] = [];
     for (let i = startDay - 1; i >= 0; i--) {
-      const prevDate = new Date(year, month, -i);
-      days.push(prevDate);
+      days.push(new Date(year, month, -i));
     }
-
-    // Add days of current month
+    const lastDay = new Date(year, month + 1, 0);
     for (let i = 1; i <= lastDay.getDate(); i++) {
       days.push(new Date(year, month, i));
     }
-
-    // Add days from next month to complete the grid
-    const remainingDays = 42 - days.length;
-    for (let i = 1; i <= remainingDays; i++) {
+    const remaining = 42 - days.length;
+    for (let i = 1; i <= remaining; i++) {
       days.push(new Date(year, month + 1, i));
     }
-
     return days;
   };
 
@@ -85,11 +133,11 @@ export function CalendarView() {
   };
 
   const isToday = (date: Date) => {
-    const today = new Date();
+    const t = new Date();
     return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
+      date.getDate() === t.getDate() &&
+      date.getMonth() === t.getMonth() &&
+      date.getFullYear() === t.getFullYear()
     );
   };
 
@@ -102,20 +150,50 @@ export function CalendarView() {
     );
   };
 
-  const isCurrentMonth = (date: Date) => {
-    return date.getMonth() === currentDate.getMonth();
-  };
-
-  const getAvailabilityForHall = (hallId: string, slotIndex: number) => {
-    const hall = weddingHalls.find((h) => h.id === hallId);
-    if (!hall) return "available";
-    return hall.availability[slotIndex]?.status || "available";
-  };
+  const isCurrentMonth = (date: Date) =>
+    date.getMonth() === currentDate.getMonth();
 
   const days = getDaysInMonth(currentDate);
 
+  const todayReservations = useMemo(
+    () =>
+      schedulesToday
+        .filter((s) => s.status === "Reserved")
+        .map((s) => ({
+          hallId: s.weddingHallId,
+          hallName: s.hallName,
+          timeRange: `${s.startTime.slice(0, 5)} - ${s.endTime.slice(0, 5)}`,
+          capacity: halls.find((h) => h.id === s.weddingHallId)?.capacity ?? 0,
+        }))
+        .sort((a, b) => a.timeRange.localeCompare(b.timeRange))
+        .slice(0, 5),
+    [schedulesToday, halls]
+  );
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div />
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2 self-start sm:self-center"
+          onClick={() => refresh()}
+          disabled={loading}
+        >
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          Yenile
+        </Button>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border bg-card">
@@ -126,13 +204,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {weddingHalls.reduce(
-                    (acc, hall) =>
-                      acc +
-                      hall.availability.filter((s) => s.status === "booked")
-                        .length,
-                    0
-                  )}
+                  {todayReserved}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Bugünkü Rezervasyon
@@ -150,13 +222,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {weddingHalls.reduce(
-                    (acc, hall) =>
-                      acc +
-                      hall.availability.filter((s) => s.status === "available")
-                        .length,
-                    0
-                  )}
+                  {todayAvailable}
                 </p>
                 <p className="text-sm text-muted-foreground">Müsait Saat</p>
               </div>
@@ -172,11 +238,9 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {weddingHalls.reduce((acc, hall) => acc + hall.capacity, 0)}
+                  {totalCapacity}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  Toplam Kapasite
-                </p>
+                <p className="text-sm text-muted-foreground">Toplam Kapasite</p>
               </div>
             </div>
           </CardContent>
@@ -190,7 +254,7 @@ export function CalendarView() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">
-                  {weddingHalls.length}
+                  {halls.length}
                 </p>
                 <p className="text-sm text-muted-foreground">Aktif Salon</p>
               </div>
@@ -244,8 +308,11 @@ export function CalendarView() {
                   className={cn(
                     "aspect-square rounded-lg p-1 text-sm transition-colors hover:bg-muted",
                     !isCurrentMonth(day) && "text-muted-foreground/50",
-                    isToday(day) && "bg-primary text-primary-foreground hover:bg-primary/90",
-                    isSelected(day) && !isToday(day) && "bg-secondary text-primary",
+                    isToday(day) &&
+                      "bg-primary text-primary-foreground hover:bg-primary/90",
+                    isSelected(day) &&
+                      !isToday(day) &&
+                      "bg-secondary text-primary",
                     "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                   )}
                 >
@@ -254,6 +321,17 @@ export function CalendarView() {
               ))}
             </div>
 
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 w-full bg-transparent"
+              onClick={() => {
+                setSelectedDate(new Date());
+                setCurrentDate(new Date());
+              }}
+            >
+              Bugüne Git
+            </Button>
             <div className="mt-4 space-y-2">
               <p className="text-xs font-medium text-muted-foreground">
                 Renk Kodları
@@ -266,12 +344,6 @@ export function CalendarView() {
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full bg-red-500" />
                   <span className="text-xs text-muted-foreground">Dolu</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-amber-500" />
-                  <span className="text-xs text-muted-foreground">
-                    Beklemede
-                  </span>
                 </div>
               </div>
             </div>
@@ -313,7 +385,7 @@ export function CalendarView() {
                     <th className="p-2 text-left text-xs font-medium text-muted-foreground">
                       Salon
                     </th>
-                    {timeSlots.map((slot) => (
+                    {SLOTS.map((slot) => (
                       <th
                         key={slot}
                         className="p-2 text-center text-xs font-medium text-muted-foreground"
@@ -324,10 +396,11 @@ export function CalendarView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {weddingHalls.map((hall) => (
+                  {halls.map((hall) => (
                     <tr key={hall.id} className="border-t border-border">
                       <td className="p-2">
                         <button
+                          type="button"
                           onClick={() => router.push(`/dashboard/${hall.id}`)}
                           className="text-left text-sm font-medium text-foreground hover:text-primary"
                         >
@@ -336,29 +409,27 @@ export function CalendarView() {
                             : hall.name}
                         </button>
                       </td>
-                      {timeSlots.map((_, slotIndex) => {
-                        const status = getAvailabilityForHall(
-                          hall.id,
-                          slotIndex
-                        );
+                      {SLOTS.map((slot) => {
+                        const status = getSlotStatus(hall.id, slot);
                         return (
-                          <td key={slotIndex} className="p-1 text-center">
-                            <div
+                          <td key={slot} className="p-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                status === "available" &&
+                                router.push(`/dashboard/${hall.id}`)
+                              }
                               className={cn(
-                                "mx-auto h-8 w-full max-w-[60px] rounded-md transition-colors",
+                                "mx-auto block h-8 w-full max-w-[60px] rounded-md transition-colors",
                                 status === "available" &&
                                   "bg-green-100 hover:bg-green-200 cursor-pointer",
                                 status === "booked" &&
-                                  "bg-red-100 cursor-not-allowed",
-                                status === "pending" &&
-                                  "bg-amber-100 cursor-pointer hover:bg-amber-200"
+                                  "bg-red-100 cursor-not-allowed"
                               )}
                               title={
                                 status === "available"
-                                  ? "Müsait"
-                                  : status === "booked"
-                                  ? "Dolu"
-                                  : "Beklemede"
+                                  ? "Müsait — Detay için tıklayın"
+                                  : "Dolu"
                               }
                             />
                           </td>
@@ -373,7 +444,7 @@ export function CalendarView() {
         </Card>
       </div>
 
-      {/* Upcoming Reservations */}
+      {/* Today's Reservations */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="text-base font-semibold text-foreground">
@@ -382,19 +453,15 @@ export function CalendarView() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {weddingHalls
-              .flatMap((hall) =>
-                hall.availability
-                  .filter((slot) => slot.status === "booked")
-                  .map((slot) => ({
-                    hallName: hall.name,
-                    hallId: hall.id,
-                    timeRange: slot.timeRange,
-                    capacity: hall.capacity,
-                  }))
-              )
-              .slice(0, 5)
-              .map((reservation, index) => (
+            {todayReservations.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border bg-muted/30 py-8 text-center">
+                <CalendarIcon className="mx-auto h-10 w-10 text-muted-foreground/50" />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Bugün için rezervasyon yok
+                </p>
+              </div>
+            ) : (
+              todayReservations.map((r, index) => (
                 <div
                   key={index}
                   className="flex items-center justify-between rounded-lg border border-border bg-muted/50 p-3"
@@ -405,29 +472,31 @@ export function CalendarView() {
                     </div>
                     <div>
                       <p className="font-medium text-foreground">
-                        {reservation.hallName}
+                        {r.hallName}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {reservation.timeRange}
+                        {r.timeRange}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="bg-red-100 text-red-700">
+                    <Badge
+                      variant="secondary"
+                      className="bg-red-100 text-red-700"
+                    >
                       Dolu
                     </Badge>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() =>
-                        router.push(`/dashboard/${reservation.hallId}`)
-                      }
+                      onClick={() => router.push(`/dashboard/${r.hallId}`)}
                     >
                       Detay
                     </Button>
                   </div>
                 </div>
-              ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

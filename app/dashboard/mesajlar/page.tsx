@@ -1,16 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole } from "@/lib/utils/role";
 import { mockMessages } from "@/lib/data";
 import { sanitizeText } from "@/lib/utils/sanitize";
-import type { Message } from "@/lib/types";
+import type { Message, UserRole } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   MessageSquare,
@@ -20,6 +19,41 @@ import {
   Megaphone,
   Hash,
 } from "lucide-react";
+
+const MESAJLAR_STORAGE_KEY = "mesajlar-messages";
+
+type StoredMessage = Omit<Message, "timestamp"> & { timestamp: string };
+
+function loadStoredMessages(): Message[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(MESAJLAR_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredMessage[];
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((m) => ({
+      ...m,
+      timestamp: new Date(m.timestamp),
+      userName: m.userName || "Kullanıcı",
+      userRole: (m.userRole || "Viewer") as UserRole,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+function saveMessages(messages: Message[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const toStore: StoredMessage[] = messages.map((m) => ({
+      ...m,
+      timestamp: m.timestamp.toISOString(),
+    }));
+    localStorage.setItem(MESAJLAR_STORAGE_KEY, JSON.stringify(toStore));
+  } catch {
+    /* ignore */
+  }
+}
 
 function formatTime(date: Date) {
   const now = new Date();
@@ -45,28 +79,61 @@ export default function MessagesPage() {
   const [activeChannel, setActiveChannel] = useState<"general" | "duyurular">(
     "general"
   );
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasLoadedFromStorage = useRef(false);
+  const skipNextPersist = useRef(false);
 
   const filteredMessages = messages
     .filter((m) => m.channel === activeChannel)
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
+  useEffect(() => {
+    const stored = loadStoredMessages();
+    if (stored && stored.length > 0) {
+      skipNextPersist.current = true;
+      setMessages(stored);
+    }
+    hasLoadedFromStorage.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedFromStorage.current) return;
+    if (skipNextPersist.current) {
+      skipNextPersist.current = false;
+      return;
+    }
+    saveMessages(messages);
+  }, [messages]);
+
   const handleSendMessage = () => {
     if (!newMessage.trim() || !user) return;
     if (activeChannel === "duyurular" && !isEditor) return;
 
+    const displayName =
+      (user.name && user.name.trim()) || user.email || "Kullanıcı";
+    const displayRole: UserRole = user.role === "Editor" ? "Editor" : "Viewer";
+
     const message: Message = {
       id: Date.now().toString(),
       userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      content: newMessage,
+      userName: displayName,
+      userRole: displayRole,
+      content: newMessage.trim(),
       timestamp: new Date(),
       channel: activeChannel,
     };
 
-    setMessages([...messages, message]);
+    setMessages((prev) => [...prev, message]);
     setNewMessage("");
   };
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [filteredMessages.length]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeChannel]);
 
   return (
     <div className="space-y-6">
@@ -136,9 +203,9 @@ export default function MessagesPage() {
             </div>
           </CardHeader>
 
-          <CardContent className="flex h-[500px] flex-col p-0">
+          <CardContent className="flex h-[500px] flex-col overflow-hidden p-0">
             {/* Messages List */}
-            <ScrollArea className="flex-1 p-4">
+            <ScrollArea className="min-h-0 flex-1 p-4">
               {filteredMessages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center py-12 text-center">
                   <MessageSquare className="h-12 w-12 text-muted-foreground/50" />
@@ -186,7 +253,7 @@ export default function MessagesPage() {
                           }`}
                         >
                           <span className="text-sm font-medium text-foreground">
-                            {message.userName}
+                            {message.userName || "Kullanıcı"}
                           </span>
                           <Badge
                             variant={
@@ -214,6 +281,7 @@ export default function MessagesPage() {
                       </div>
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
                 </div>
               )}
             </ScrollArea>
@@ -237,7 +305,11 @@ export default function MessagesPage() {
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
+                      if (
+                        e.key === "Enter" &&
+                        !e.shiftKey &&
+                        newMessage.trim()
+                      ) {
                         e.preventDefault();
                         handleSendMessage();
                       }

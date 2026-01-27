@@ -56,6 +56,11 @@ export const mockRequests: Request[] = [
     status: "Pending",
     createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
     hallName: "Atatürk Nikah Salonu",
+    eventType: 0,
+    eventName: "Yılmaz - Demir Nikahı",
+    eventOwner: "Ali Yılmaz",
+    eventDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString().slice(0, 10),
+    eventTime: "10:30",
   },
   {
     id: "2",
@@ -65,6 +70,11 @@ export const mockRequests: Request[] = [
     status: "Answered",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     hallName: "Bahçe Nikah Alanı",
+    eventType: 4,
+    eventName: "Özel Etkinlik",
+    eventOwner: "Fatma Kaya",
+    eventDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 5).toISOString().slice(0, 10),
+    eventTime: "14:00",
   },
   {
     id: "3",
@@ -74,6 +84,11 @@ export const mockRequests: Request[] = [
     status: "Answered",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
     hallName: "Cumhuriyet Nikah Salonu",
+    eventType: 1,
+    eventName: "Kaya - Aydın Nişanı",
+    eventOwner: "Mehmet Demir",
+    eventDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3).toISOString().slice(0, 10),
+    eventTime: "15:30",
   },
 ];
 

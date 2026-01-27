@@ -57,7 +57,7 @@ export interface Request {
   weddingHallId: string;
   createdByUserId: string;
   message: string;
-  status: "Pending" | "Answered";
+  status: "Pending" | "Answered" | "Rejected";
   createdAt: string;
   hallName: string;
   eventType: number;

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole } from "@/lib/utils/role";
-import { getRequests, answerRequest } from "@/lib/api/requests";
+import { getRequests, approveRequest, rejectRequest } from "@/lib/api/requests";
 import { getHalls } from "@/lib/api/halls";
 import { getMessagesByRequestId, createMessage, type MessageDto } from "@/lib/api/messages";
 import type { Request as Req, WeddingHall } from "@/lib/types";
@@ -12,7 +12,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Unauthorized } from "@/components/unauthorized";
 import {
   FileText,
@@ -23,6 +22,9 @@ import {
   Calendar,
   User,
   Send,
+  XCircle,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { sanitizeText } from "@/lib/utils/sanitize";
@@ -47,10 +49,18 @@ function StatusBadge({ status }: { status: Req["status"] }) {
       </Badge>
     );
   }
+  if (status === "Rejected") {
+    return (
+      <Badge variant="outline" className="gap-1 border-red-500 text-red-600">
+        <XCircle className="h-3 w-3" />
+        Reddedildi
+      </Badge>
+    );
+  }
   return (
     <Badge className="gap-1 bg-green-500 text-white">
       <CheckCircle2 className="h-3 w-3" />
-      Yanıtlandı
+      Onaylandı
     </Badge>
   );
 }
@@ -61,17 +71,19 @@ export default function RequestsPage() {
   const [halls, setHalls] = useState<WeddingHall[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Req | null>(null);
-  const [responseNote, setResponseNote] = useState("");
-  const [answeringId, setAnsweringId] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
+  const loadMessagesIdRef = useRef(0);
 
   const loadRequests = useCallback(async () => {
     try {
       const [reqs, h] = await Promise.all([getRequests(), getHalls()]);
       setHalls(h ?? []);
+      // Debug: Status değerlerini kontrol et
+      console.log("Loaded requests:", reqs.map(r => ({ id: r.id, status: r.status })));
       const withHall = (reqs ?? []).map((r) => ({
         ...r,
         hallName: h.find((x) => x.id === r.weddingHallId)?.name ?? "",
@@ -83,6 +95,7 @@ export default function RequestsPage() {
         return next ?? prev;
       });
     } catch (e) {
+      console.error("loadRequests error:", e);
       toast.error(toUserFriendlyMessage(e));
     } finally {
       setLoading(false);
@@ -94,8 +107,22 @@ export default function RequestsPage() {
     loadRequests();
   }, [loadRequests]);
 
+  const loadMessages = useCallback(async (requestId: string) => {
+    const id = ++loadMessagesIdRef.current;
+    setLoadingMessages(true);
+    try {
+      const msgs = await getMessagesByRequestId(requestId);
+      if (id !== loadMessagesIdRef.current) return;
+      setMessages(msgs);
+    } catch (e) {
+      if (id !== loadMessagesIdRef.current) return;
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      if (id === loadMessagesIdRef.current) setLoadingMessages(false);
+    }
+  }, []);
+
   useEffect(() => {
-    setResponseNote("");
     setNewMessage("");
     if (selected) {
       loadMessages(selected.id);
@@ -103,18 +130,6 @@ export default function RequestsPage() {
       setMessages([]);
     }
   }, [selected?.id, loadMessages]);
-
-  const loadMessages = useCallback(async (requestId: string) => {
-    setLoadingMessages(true);
-    try {
-      const msgs = await getMessagesByRequestId(requestId);
-      setMessages(msgs);
-    } catch (e) {
-      toast.error(toUserFriendlyMessage(e));
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, []);
 
   const handleSendMessage = async () => {
     if (!selected || !newMessage.trim()) return;
@@ -132,7 +147,8 @@ export default function RequestsPage() {
   };
 
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
-  const answeredCount = requests.filter((r) => r.status === "Answered").length;
+  const approvedCount = requests.filter((r) => r.status === "Answered").length;
+  const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
 
   if (authLoading) {
     return (
@@ -163,7 +179,7 @@ export default function RequestsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
@@ -192,8 +208,19 @@ export default function RequestsPage() {
               <CheckCircle2 className="h-6 w-6 text-green-500" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{answeredCount}</p>
-              <p className="text-sm text-muted-foreground">Yanıtlanan</p>
+              <p className="text-2xl font-bold text-foreground">{approvedCount}</p>
+              <p className="text-sm text-muted-foreground">Onaylanan</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-red-500/10">
+              <XCircle className="h-6 w-6 text-red-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-foreground">{rejectedCount}</p>
+              <p className="text-sm text-muted-foreground">Reddedilen</p>
             </div>
           </CardContent>
         </Card>
@@ -287,37 +314,83 @@ export default function RequestsPage() {
                     </div>
                   </div>
                   {selected.status === "Pending" && (
-                    <div className="space-y-3 border-t border-border pt-4">
-                      <Label htmlFor="response-note" className="text-sm text-muted-foreground">
-                        Yanıt notu (isteğe bağlı, kaydedilmez)
-                      </Label>
-                      <Textarea
-                        id="response-note"
-                        placeholder="İsteğe bağlı not..."
-                        value={responseNote}
-                        onChange={(e) => setResponseNote(e.target.value)}
-                        className="min-h-20 resize-none"
-                      />
+                    <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+                      <p className="w-full text-sm text-muted-foreground">
+                        Talep onaylanırsa müsaitlik oluşturulur; reddedilirse işlem yapılmaz.
+                        Aynı salonda aynı saate başka etkinlik varsa onay verilemez.
+                      </p>
                       <Button
-                        className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                        disabled={answeringId === selected.id}
+                        className="gap-2 bg-green-600 text-white hover:bg-green-700"
+                        disabled={actionId === selected.id}
                         onClick={async () => {
                           if (!selected) return;
-                          setAnsweringId(selected.id);
+                          console.log("Approving request:", { id: selected.id, status: selected.status });
+                          setActionId(selected.id);
                           try {
-                            await answerRequest(selected.id);
-                            toast.success("Talep yanıtlandı.");
-                            setResponseNote("");
+                            const updated = await approveRequest(selected.id);
+                            toast.success("Talep onaylandı. Müsaitlik oluşturuldu.");
+                            // State'i hemen güncelle
+                            setRequests((prev) =>
+                              prev.map((r) =>
+                                r.id === selected.id
+                                  ? { ...updated, hallName: r.hallName }
+                                  : r
+                              )
+                            );
+                            setSelected((prev) =>
+                              prev?.id === selected.id
+                                ? { ...updated, hallName: prev.hallName }
+                                : prev
+                            );
+                            // Sonra tüm listeyi yenile
                             await loadRequests();
                           } catch (e) {
+                            console.error("approveRequest error:", e);
                             toast.error(toUserFriendlyMessage(e));
                           } finally {
-                            setAnsweringId(null);
+                            setActionId(null);
                           }
                         }}
                       >
-                        <Send className="h-4 w-4" />
-                        {answeringId === selected.id ? "Yanıtlanıyor..." : "Yanıtla"}
+                        <ThumbsUp className="h-4 w-4" />
+                        {actionId === selected.id ? "İşleniyor..." : "Onayla"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        disabled={actionId === selected.id}
+                        onClick={async () => {
+                          if (!selected) return;
+                          console.log("Rejecting request:", { id: selected.id, status: selected.status });
+                          setActionId(selected.id);
+                          try {
+                            const updated = await rejectRequest(selected.id);
+                            toast.success("Talep reddedildi.");
+                            // State'i hemen güncelle
+                            setRequests((prev) =>
+                              prev.map((r) =>
+                                r.id === selected.id
+                                  ? { ...updated, hallName: r.hallName }
+                                  : r
+                              )
+                            );
+                            setSelected((prev) =>
+                              prev?.id === selected.id
+                                ? { ...updated, hallName: prev.hallName }
+                                : prev
+                            );
+                            // Sonra tüm listeyi yenile
+                            await loadRequests();
+                          } catch (e) {
+                            console.error("rejectRequest error:", e);
+                            toast.error(toUserFriendlyMessage(e));
+                          } finally {
+                            setActionId(null);
+                          }
+                        }}
+                      >
+                        <ThumbsDown className="h-4 w-4" />
+                        Reddet
                       </Button>
                     </div>
                   )}

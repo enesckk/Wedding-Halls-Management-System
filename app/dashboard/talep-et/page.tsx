@@ -29,6 +29,9 @@ const EVENT_TYPES = [
   { value: 4, label: "Özel" },
 ];
 
+/** İzin verilen başlangıç saatleri (takvim/dashboard ile uyumlu) */
+const TIME_SLOTS = ["09:00", "10:30", "12:00", "14:00", "15:30", "17:00"];
+
 export default function TalepEtPage() {
   const router = useRouter();
   const [halls, setHalls] = useState<WeddingHall[]>([]);
@@ -226,19 +229,27 @@ export default function TalepEtPage() {
                 <Label htmlFor="eventTime" className="text-foreground">
                   Saat <span className="text-destructive">*</span>
                 </Label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="eventTime"
-                    type="time"
-                    value={formData.eventTime}
-                    onChange={(e) =>
-                      setFormData({ ...formData, eventTime: e.target.value })
-                    }
-                    className="pl-10"
-                    required
-                  />
-                </div>
+                <Select
+                  value={formData.eventTime}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, eventTime: value })
+                  }
+                >
+                  <SelectTrigger id="eventTime" className="gap-2">
+                    <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <SelectValue placeholder="Saat seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIME_SLOTS.map((slot) => (
+                      <SelectItem key={slot} value={slot}>
+                        {slot}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Sadece müsait slot saatleri seçilebilir.
+                </p>
               </div>
             </div>
 
