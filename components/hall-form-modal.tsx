@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import type { CreateHallData, UpdateHallData } from "@/lib/api/halls";
 import type { WeddingHall } from "@/lib/types";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
+import { Image as ImageIcon, Upload, X } from "lucide-react";
 
 type Mode = "create" | "update";
 
@@ -35,6 +36,7 @@ const emptyForm: CreateHallData = {
   capacity: 0,
   description: "",
   imageUrl: "",
+  technicalDetails: "",
 };
 
 export function HallFormModal({
@@ -46,6 +48,33 @@ export function HallFormModal({
 }: HallFormModalProps) {
   const [form, setForm] = useState<CreateHallData>(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Lütfen bir görsel dosyası seçin.");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Görsel boyutu 5MB'dan küçük olmalıdır.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      setForm((p) => ({ ...p, imageUrl: base64String }));
+      setImagePreview(base64String);
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (open) {
@@ -56,9 +85,15 @@ export function HallFormModal({
           capacity: initialHall.capacity,
           description: initialHall.description,
           imageUrl: initialHall.imageUrl || "",
+          technicalDetails: initialHall.technicalDetails || "",
         });
+        setImagePreview(initialHall.imageUrl || "");
       } else {
         setForm(emptyForm);
+        setImagePreview("");
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
     }
   }, [open, mode, initialHall]);
@@ -155,14 +190,81 @@ export function HallFormModal({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="hall-imageUrl">Görsel URL</Label>
-            <Input
-              id="hall-imageUrl"
-              value={form.imageUrl}
+            <Label htmlFor="hall-image">Görsel</Label>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="gap-2"
+                >
+                  <Upload className="h-4 w-4" />
+                  Görsel Seç
+                </Button>
+                <Input
+                  ref={fileInputRef}
+                  id="hall-image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                {imagePreview && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setImagePreview("");
+                      setForm((p) => ({ ...p, imageUrl: "" }));
+                    }}
+                    className="gap-2 text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                    Kaldır
+                  </Button>
+                )}
+              </div>
+              {imagePreview ? (
+                <div className="relative w-full overflow-hidden rounded-lg border border-border">
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="h-48 w-full object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-48 items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25">
+                  <div className="text-center">
+                    <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Görsel seçilmedi
+                    </p>
+                  </div>
+                </div>
+              )}
+              <Input
+                id="hall-imageUrl"
+                value={form.imageUrl}
+                onChange={(e) => {
+                  setForm((p) => ({ ...p, imageUrl: e.target.value }));
+                  setImagePreview(e.target.value);
+                }}
+                placeholder="Veya görsel URL'i girin..."
+                className="mt-2"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="hall-technicalDetails">Teknik Detaylar</Label>
+            <Textarea
+              id="hall-technicalDetails"
+              value={form.technicalDetails}
               onChange={(e) =>
-                setForm((p) => ({ ...p, imageUrl: e.target.value }))
+                setForm((p) => ({ ...p, technicalDetails: e.target.value }))
               }
-              placeholder="https://..."
+              placeholder="Teknik özellikler, ekipmanlar, özel notlar..."
+              className="min-h-24 resize-none"
             />
           </div>
           <DialogFooter>

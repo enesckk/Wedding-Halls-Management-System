@@ -89,6 +89,18 @@ export default function RequestsPage() {
     }
   }, []);
 
+  const loadMessages = useCallback(async (requestId: string) => {
+    setLoadingMessages(true);
+    try {
+      const msgs = await getMessagesByRequestId(requestId);
+      setMessages(msgs);
+    } catch (e) {
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     loadRequests();
@@ -103,18 +115,6 @@ export default function RequestsPage() {
       setMessages([]);
     }
   }, [selected?.id, loadMessages]);
-
-  const loadMessages = useCallback(async (requestId: string) => {
-    setLoadingMessages(true);
-    try {
-      const msgs = await getMessagesByRequestId(requestId);
-      setMessages(msgs);
-    } catch (e) {
-      toast.error(toUserFriendlyMessage(e));
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, []);
 
   const handleSendMessage = async () => {
     if (!selected || !newMessage.trim()) return;

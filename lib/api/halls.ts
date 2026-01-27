@@ -10,6 +10,7 @@ type WeddingHallDto = {
   capacity: number;
   description: string;
   imageUrl: string;
+  technicalDetails: string;
 };
 
 function toHall(d: WeddingHallDto): WeddingHall {
@@ -20,6 +21,7 @@ function toHall(d: WeddingHallDto): WeddingHall {
     capacity: d.capacity,
     description: d.description,
     imageUrl: d.imageUrl,
+    technicalDetails: d.technicalDetails || "",
   };
 }
 
@@ -29,13 +31,16 @@ export type CreateHallData = {
   capacity: number;
   description: string;
   imageUrl: string;
+  technicalDetails: string;
 };
 
 export type UpdateHallData = CreateHallData;
 
 export async function getHalls(): Promise<WeddingHall[]> {
-  const list = await fetchApi<WeddingHallDto[]>(HALLS);
-  return (list ?? []).map(toHall);
+  // Backend returns paginated result, but we want all halls
+  const result = await fetchApi<{ items: WeddingHallDto[]; totalCount: number }>(`${HALLS}?page=1&pageSize=1000`);
+  const items = result?.items ?? [];
+  return items.map(toHall);
 }
 
 export async function getHallById(id: string): Promise<WeddingHall | null> {
