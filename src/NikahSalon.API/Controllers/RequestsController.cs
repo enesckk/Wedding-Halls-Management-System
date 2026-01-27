@@ -6,10 +6,12 @@ using NikahSalon.Application.Messages.CreateMessage;
 using NikahSalon.Application.Messages.DeleteMessage;
 using NikahSalon.Application.Messages.GetMessagesByRequestId;
 using NikahSalon.Application.Requests.AnswerRequest;
+using NikahSalon.Application.Requests.ApproveRequest;
 using NikahSalon.Application.Requests.CreateRequest;
 using NikahSalon.Application.Requests.DeleteRequest;
 using NikahSalon.Application.Requests.GetRequestById;
 using NikahSalon.Application.Requests.GetRequests;
+using NikahSalon.Application.Requests.RejectRequest;
 
 namespace NikahSalon.API.Controllers;
 
@@ -22,6 +24,8 @@ public sealed class RequestsController : ControllerBase
     private readonly GetRequestsQueryHandler _getRequestsHandler;
     private readonly GetRequestByIdQueryHandler _getRequestByIdHandler;
     private readonly AnswerRequestCommandHandler _answerHandler;
+    private readonly ApproveRequestCommandHandler _approveHandler;
+    private readonly RejectRequestCommandHandler _rejectHandler;
     private readonly DeleteRequestCommandHandler _deleteHandler;
     private readonly CreateRequestCommandValidator _createValidator;
     private readonly CreateMessageCommandHandler _createMessageHandler;
@@ -34,6 +38,8 @@ public sealed class RequestsController : ControllerBase
         GetRequestsQueryHandler getRequestsHandler,
         GetRequestByIdQueryHandler getRequestByIdHandler,
         AnswerRequestCommandHandler answerHandler,
+        ApproveRequestCommandHandler approveHandler,
+        RejectRequestCommandHandler rejectHandler,
         DeleteRequestCommandHandler deleteHandler,
         CreateRequestCommandValidator createValidator,
         CreateMessageCommandHandler createMessageHandler,
@@ -45,6 +51,8 @@ public sealed class RequestsController : ControllerBase
         _getRequestsHandler = getRequestsHandler;
         _getRequestByIdHandler = getRequestByIdHandler;
         _answerHandler = answerHandler;
+        _approveHandler = approveHandler;
+        _rejectHandler = rejectHandler;
         _deleteHandler = deleteHandler;
         _createValidator = createValidator;
         _createMessageHandler = createMessageHandler;
@@ -54,7 +62,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Viewer")]
+    [Authorize(Roles = "Viewer,Editor")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -138,6 +146,50 @@ public sealed class RequestsController : ControllerBase
         try
         {
             var result = await _answerHandler.HandleAsync(command, ct);
+            if (result is null) return NotFound();
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:guid}/approve")]
+    [Authorize(Roles = "Editor")]
+    [EnableRateLimiting("WritePolicy")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> Approve(Guid id, CancellationToken ct)
+    {
+        var command = new ApproveRequestCommand { Id = id };
+        try
+        {
+            var result = await _approveHandler.HandleAsync(command, ct);
+            if (result is null) return NotFound();
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:guid}/reject")]
+    [Authorize(Roles = "Editor")]
+    [EnableRateLimiting("WritePolicy")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> Reject(Guid id, CancellationToken ct)
+    {
+        var command = new RejectRequestCommand { Id = id };
+        try
+        {
+            var result = await _rejectHandler.HandleAsync(command, ct);
             if (result is null) return NotFound();
             return Ok(result);
         }

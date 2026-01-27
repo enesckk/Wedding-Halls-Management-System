@@ -27,6 +27,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             e.Property(x => x.Address).HasMaxLength(500).IsRequired();
             e.Property(x => x.Description).HasMaxLength(2000).IsRequired();
             e.Property(x => x.ImageUrl).HasMaxLength(1000).IsRequired();
+            e.Property(x => x.TechnicalDetails).HasMaxLength(2000);
         });
 
         builder.Entity<Schedule>(e =>
