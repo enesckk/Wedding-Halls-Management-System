@@ -102,18 +102,6 @@ export default function RequestsPage() {
     }
   }, []);
 
-  const loadMessages = useCallback(async (requestId: string) => {
-    setLoadingMessages(true);
-    try {
-      const msgs = await getMessagesByRequestId(requestId);
-      setMessages(msgs);
-    } catch (e) {
-      toast.error(toUserFriendlyMessage(e));
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, []);
-
   useEffect(() => {
     setLoading(true);
     loadRequests();
