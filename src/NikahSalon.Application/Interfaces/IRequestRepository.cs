@@ -13,7 +13,8 @@ public interface IRequestRepository
         int pageSize, 
         RequestStatus? status, 
         string? sortBy, 
-        string? sortOrder, 
+        string? sortOrder,
+        Guid? createdByUserId = null,
         CancellationToken ct = default);
     Task<Request> AddAsync(Request entity, CancellationToken ct = default);
     Task UpdateAsync(Request entity, CancellationToken ct = default);

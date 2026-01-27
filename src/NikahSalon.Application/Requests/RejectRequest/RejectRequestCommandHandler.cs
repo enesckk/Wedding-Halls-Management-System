@@ -21,6 +21,16 @@ public sealed class RejectRequestCommandHandler
             throw new InvalidOperationException("Sadece bekleyen talepler reddedilebilir.");
 
         entity.Status = RequestStatus.Rejected;
+        
+        // Reddetme sebebini mesaj olarak ekle
+        if (!string.IsNullOrWhiteSpace(command.Reason))
+        {
+            var reasonMessage = $"[REDDEDİLDİ] Sebep: {command.Reason}";
+            entity.Message = string.IsNullOrWhiteSpace(entity.Message) 
+                ? reasonMessage 
+                : $"{entity.Message}\n\n{reasonMessage}";
+        }
+        
         await _repository.UpdateAsync(entity, ct);
 
         return new RequestDto

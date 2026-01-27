@@ -37,7 +37,8 @@ public sealed class RequestRepository : IRequestRepository
         int pageSize, 
         RequestStatus? status, 
         string? sortBy, 
-        string? sortOrder, 
+        string? sortOrder,
+        Guid? createdByUserId = null,
         CancellationToken ct = default)
     {
         var query = _db.Requests.AsNoTracking();
@@ -46,6 +47,12 @@ public sealed class RequestRepository : IRequestRepository
         if (status.HasValue)
         {
             query = query.Where(x => x.Status == status.Value);
+        }
+
+        // Apply creator filter if provided (for Viewer role)
+        if (createdByUserId.HasValue)
+        {
+            query = query.Where(x => x.CreatedByUserId == createdByUserId.Value);
         }
 
         // Get total count before pagination

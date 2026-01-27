@@ -100,7 +100,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Editor")]
+    [Authorize(Roles = "Editor,Viewer")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -110,13 +110,24 @@ public sealed class RequestsController : ControllerBase
         [FromQuery] string? sortOrder = "desc",
         CancellationToken ct = default)
     {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role);
+        
+        // Viewer can only see their own requests
+        Guid? createdByUserId = null;
+        if (roleClaim == "Viewer" && !string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
+        {
+            createdByUserId = userId;
+        }
+
         var query = new GetRequestsQuery
         {
             Page = page,
             PageSize = pageSize,
             Status = status.HasValue ? (NikahSalon.Domain.Enums.RequestStatus?)status.Value : null,
             SortBy = sortBy,
-            SortOrder = sortOrder
+            SortOrder = sortOrder,
+            CreatedByUserId = createdByUserId
         };
         var result = await _getRequestsHandler.HandleAsync(query, ct);
         return Ok(result);
@@ -125,11 +136,25 @@ public sealed class RequestsController : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role);
+        
         var query = new GetRequestByIdQuery { Id = id };
         var request = await _getRequestByIdHandler.HandleAsync(query, ct);
         if (request is null) return NotFound();
+        
+        // Viewer can only see their own requests
+        if (roleClaim == "Viewer" && !string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
+        {
+            if (request.CreatedByUserId != userId)
+            {
+                return Forbid();
+            }
+        }
+        
         return Ok(request);
     }
 
@@ -164,11 +189,32 @@ public sealed class RequestsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Approve(Guid id, CancellationToken ct)
     {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var editorId))
+            return Unauthorized();
+
         var command = new ApproveRequestCommand { Id = id };
         try
         {
             var result = await _approveHandler.HandleAsync(command, ct);
             if (result is null) return NotFound();
+            
+            // Send notification message to request creator
+            try
+            {
+                var notificationMessage = new CreateMessageCommand
+                {
+                    RequestId = id,
+                    SenderUserId = editorId,
+                    Content = $"✅ Talebiniz onaylandı! {result.EventName} etkinliği için {result.EventDate:dd.MM.yyyy} tarihinde {result.EventTime:HH:mm} saatinde rezervasyon yapıldı."
+                };
+                await _createMessageHandler.HandleAsync(notificationMessage, ct);
+            }
+            catch
+            {
+                // Ignore notification errors - don't fail the approval
+            }
+            
             return Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -184,13 +230,41 @@ public sealed class RequestsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> Reject(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Reject(Guid id, [FromBody] RejectRequestRequest request, CancellationToken ct)
     {
-        var command = new RejectRequestCommand { Id = id };
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var editorId))
+            return Unauthorized();
+
+        var command = new RejectRequestCommand 
+        { 
+            Id = id,
+            Reason = request.Reason ?? string.Empty
+        };
         try
         {
             var result = await _rejectHandler.HandleAsync(command, ct);
             if (result is null) return NotFound();
+            
+            // Send notification message to request creator
+            try
+            {
+                var reasonText = !string.IsNullOrWhiteSpace(request.Reason) 
+                    ? $" Sebep: {request.Reason}" 
+                    : "";
+                var notificationMessage = new CreateMessageCommand
+                {
+                    RequestId = id,
+                    SenderUserId = editorId,
+                    Content = $"❌ Talebiniz reddedildi.{reasonText}"
+                };
+                await _createMessageHandler.HandleAsync(notificationMessage, ct);
+            }
+            catch
+            {
+                // Ignore notification errors - don't fail the rejection
+            }
+            
             return Ok(result);
         }
         catch (InvalidOperationException ex)
@@ -294,4 +368,9 @@ public sealed class CreateRequestRequest
 public sealed class CreateMessageRequest
 {
     public string Content { get; set; } = string.Empty;
+}
+
+public sealed class RejectRequestRequest
+{
+    public string? Reason { get; set; }
 }

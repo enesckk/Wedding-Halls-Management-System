@@ -38,7 +38,8 @@ public sealed class GetRequestsQueryHandler
             pageSize, 
             query.Status, 
             sortBy, 
-            sortOrder, 
+            sortOrder,
+            query.CreatedByUserId,
             ct);
         
         var dtos = items.Select(r => new RequestDto
