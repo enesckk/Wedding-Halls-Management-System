@@ -19,6 +19,7 @@ import { HallFormModal } from "@/components/hall-form-modal";
 import { getHallById } from "@/lib/api/halls";
 import { getSchedulesByHall, updateSchedule } from "@/lib/api/schedules";
 import { useUser } from "@/lib/user-context";
+import { isViewer } from "@/lib/utils/role";
 import type { WeddingHall, Schedule } from "@/lib/types";
 import {
   ArrowLeft,
@@ -47,7 +48,7 @@ function todayLocal(): string {
 export default function HallDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const { isEditor } = useUser();
+  const { isEditor, user } = useUser();
   const [hall, setHall] = useState<WeddingHall | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,7 +213,9 @@ export default function HallDetailPage() {
             </Card>
           </div>
 
-          <RequestModal hallId={hall.id} hallName={hall.name} />
+          {isViewer(user?.role) && (
+            <RequestModal hallId={hall.id} hallName={hall.name} />
+          )}
         </div>
       </div>
 

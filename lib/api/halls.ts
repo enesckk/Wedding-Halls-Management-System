@@ -11,20 +11,7 @@ type WeddingHallDto = {
   capacity: number;
   description: string;
   imageUrl: string;
-  technicalDetails?: string; // Backend'de var ama frontend'de kullanmıyoruz
-};
-
-type PagedResult<T> = {
-  items?: T[];
-  Items?: T[]; // Backend PascalCase kullanıyor olabilir
-  page?: number;
-  Page?: number;
-  pageSize?: number;
-  PageSize?: number;
-  totalCount?: number;
-  TotalCount?: number;
-  totalPages?: number;
-  TotalPages?: number;
+  technicalDetails: string;
 };
 
 function toHall(d: WeddingHallDto): WeddingHall {
@@ -35,6 +22,7 @@ function toHall(d: WeddingHallDto): WeddingHall {
     capacity: d.capacity,
     description: d.description,
     imageUrl: d.imageUrl,
+    technicalDetails: d.technicalDetails || "",
   };
 }
 
@@ -54,19 +42,18 @@ export type CreateHallData = {
   capacity: number;
   description: string;
   imageUrl: string;
+  technicalDetails: string;
 };
 
 export type UpdateHallData = CreateHallData;
 
 export async function getHalls(): Promise<WeddingHall[]> {
   try {
-    const result = await fetchApi<PagedResult<WeddingHallDto>>(HALLS);
-    // Backend PagedResult döndürüyor, items veya Items property'sinden array'i al
-    const items = result?.items ?? result?.Items ?? [];
-    console.log("getHalls result:", { result, items, isArray: Array.isArray(items) });
-    return Array.isArray(items) ? items.map(toHall) : [];
+    // Backend returns paginated result, but we want all halls
+    const result = await fetchApi<{ items: WeddingHallDto[]; totalCount: number }>(`${HALLS}?page=1&pageSize=1000`);
+    const items = result?.items ?? [];
+    return items.map(toHall);
   } catch (error) {
-    console.error("getHalls error:", error);
     if (isNetworkError(error)) {
       console.warn("Backend API not available, using mock halls data");
       // Return mock data from lib/data.ts
@@ -77,6 +64,7 @@ export async function getHalls(): Promise<WeddingHall[]> {
         capacity: hall.capacity,
         description: hall.description,
         imageUrl: hall.imageUrl,
+        technicalDetails: "",
       }));
     }
     throw error;
@@ -100,6 +88,7 @@ export async function getHallById(id: string): Promise<WeddingHall | null> {
         capacity: hall.capacity,
         description: hall.description,
         imageUrl: hall.imageUrl,
+        technicalDetails: "",
       };
     }
     return null;

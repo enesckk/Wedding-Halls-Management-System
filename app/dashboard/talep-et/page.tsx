@@ -20,6 +20,9 @@ import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 import { Calendar, Clock, Building2, User, FileText, Send } from "lucide-react";
 import type { WeddingHall } from "@/lib/types";
+import { useUser } from "@/lib/user-context";
+import { isViewer } from "@/lib/utils/role";
+import { Unauthorized } from "@/components/unauthorized";
 
 const EVENT_TYPES = [
   { value: 0, label: "Nikah" },
@@ -34,6 +37,7 @@ const TIME_SLOTS = ["09:00", "10:30", "12:00", "14:00", "15:30", "17:00"];
 
 export default function TalepEtPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useUser();
   const [halls, setHalls] = useState<WeddingHall[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -96,6 +100,19 @@ export default function TalepEtPage() {
       setSubmitting(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  // Only Viewer can create requests
+  if (!isViewer(user?.role)) {
+    return <Unauthorized />;
+  }
 
   if (loading) {
     return (

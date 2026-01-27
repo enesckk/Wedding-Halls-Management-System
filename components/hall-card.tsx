@@ -7,12 +7,17 @@ import { Button } from "@/components/ui/button";
 import { MapPin, Users } from "lucide-react";
 import type { WeddingHall } from "@/lib/types";
 import { RequestModal } from "@/components/request-modal";
+import { useUser } from "@/lib/user-context";
+import { isViewer } from "@/lib/utils/role";
 
 interface HallCardProps {
   hall: WeddingHall;
 }
 
 export function HallCard({ hall }: HallCardProps) {
+  const { user } = useUser();
+  const canRequest = isViewer(user?.role);
+
   return (
     <Card className="group overflow-hidden border border-border bg-card transition-all duration-200 hover:shadow-lg">
       <div className="relative aspect-[16/10] overflow-hidden">
@@ -49,7 +54,7 @@ export function HallCard({ hall }: HallCardProps) {
             Detayları Gör
           </Button>
         </Link>
-        <RequestModal hallId={hall.id} hallName={hall.name} />
+        {canRequest && <RequestModal hallId={hall.id} hallName={hall.name} />}
       </CardFooter>
     </Card>
   );

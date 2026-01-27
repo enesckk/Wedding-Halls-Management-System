@@ -11,6 +11,7 @@ export interface WeddingHall {
   capacity: number;
   description: string;
   imageUrl: string;
+  technicalDetails: string;
   /** Mock only. API halls use getSchedulesByHall. */
   availability?: Array<{ id: string; timeRange: string; status: "available" | "booked" }>;
 }
