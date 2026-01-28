@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/select";
 import { getHalls } from "@/lib/api/halls";
 import { getSchedulesByHall, createSchedule, updateSchedule, type UpdateScheduleData } from "@/lib/api/schedules";
-import type { Schedule, WeddingHall } from "@/lib/types";
+import { getRequests } from "@/lib/api/requests";
+import type { Schedule, WeddingHall, Request } from "@/lib/types";
 import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole } from "@/lib/utils/role";
 import {
@@ -62,7 +63,13 @@ function formatTimeRange(s: Schedule): string {
   return `${start} - ${end}`;
 }
 
-type ScheduleWithHall = Schedule & { hallName: string };
+type ScheduleWithHall = Schedule & { 
+  hallName: string;
+  eventName?: string;
+  eventOwner?: string;
+  eventType?: number;
+  requestId?: string;
+};
 
 export default function TakvimPage() {
   const { user } = useUser();
@@ -74,6 +81,8 @@ export default function TakvimPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedHall, setSelectedHall] = useState<string>("all");
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleWithHall | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
   const [selectedHallForSchedule, setSelectedHallForSchedule] = useState<string>("");
   const [scheduleStatus, setScheduleStatus] = useState<"Available" | "Reserved">("Reserved");
@@ -81,15 +90,91 @@ export default function TakvimPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const h = await getHalls();
+      const [h, requests] = await Promise.all([
+        getHalls(),
+        getRequests().catch(() => []), // Request'ler yüklenemezse boş array döndür
+      ]);
       setHalls(h ?? []);
+      
+      // Request'leri çek (sadece Answered olanlar)
+      const answeredRequests = requests.filter((r: Request) => r.status === "Answered");
+      console.log(`[Takvim] Answered requests: ${answeredRequests.length}`);
+      
       const all: ScheduleWithHall[] = [];
+      let matchedCount = 0;
       for (const hall of h ?? []) {
         const list = await getSchedulesByHall(hall.id);
         for (const s of list ?? []) {
-          all.push({ ...s, hallName: hall.name });
+          // Dolu schedule'lar için Request bilgilerini ekle
+          if (s.status === "Reserved") {
+            // Tarih ve saat formatını normalize et
+            let reqDate = s.date;
+            if (reqDate.includes('T')) {
+              reqDate = reqDate.split('T')[0];
+            }
+            
+            // Saat formatını normalize et
+            let scheduleTime = s.startTime;
+            if (scheduleTime.includes(':')) {
+              scheduleTime = scheduleTime.slice(0, 5); // HH:mm
+            }
+            
+            // Eşleşen Request'i bul
+            const matchingRequest = answeredRequests.find((req: Request) => {
+              let reqEventDate = req.eventDate;
+              if (reqEventDate.includes('T')) {
+                reqEventDate = reqEventDate.split('T')[0];
+              }
+              
+              // Saat formatını normalize et
+              let reqTime = req.eventTime;
+              if (reqTime.includes(':')) {
+                reqTime = reqTime.slice(0, 5); // HH:mm
+              }
+              
+              const matches = req.weddingHallId === s.weddingHallId &&
+                             reqEventDate === reqDate &&
+                             reqTime === scheduleTime;
+              
+              if (matches) {
+                console.log(`[Takvim] Matched request:`, {
+                  scheduleId: s.id,
+                  requestId: req.id,
+                  eventName: req.eventName,
+                  hallId: req.weddingHallId,
+                  date: reqEventDate,
+                  time: reqTime,
+                });
+              }
+              
+              return matches;
+            });
+            
+            if (matchingRequest) {
+              matchedCount++;
+              all.push({
+                ...s,
+                hallName: hall.name,
+                eventName: matchingRequest.eventName,
+                eventOwner: matchingRequest.eventOwner,
+                eventType: matchingRequest.eventType,
+                requestId: matchingRequest.id,
+              });
+            } else {
+              console.log(`[Takvim] No matching request for schedule:`, {
+                scheduleId: s.id,
+                hallId: s.weddingHallId,
+                date: reqDate,
+                time: scheduleTime,
+              });
+              all.push({ ...s, hallName: hall.name });
+            }
+          } else {
+            all.push({ ...s, hallName: hall.name });
+          }
         }
       }
+      console.log(`[Takvim] Total schedules: ${all.length}, Matched with requests: ${matchedCount}`);
       setSchedules(all);
     } catch (e) {
       toast.error(toUserFriendlyMessage(e));
@@ -161,7 +246,7 @@ export default function TakvimPage() {
 
   // Saat bazlı müsaitlik durumu hesaplama
   const hourlyAvailability = useMemo(() => {
-    const result: Record<string, Record<string, { available: boolean; schedule?: Schedule }>> = {};
+    const result: Record<string, Record<string, { available: boolean; schedule?: ScheduleWithHall }>> = {};
     
     // Her saat için
     TIME_SLOTS.forEach((timeSlot) => {
@@ -170,17 +255,31 @@ export default function TakvimPage() {
       // Her salon için
       halls.forEach((hall) => {
         // Bu tarih ve saat için schedule bul
+        // Saat formatını normalize et (HH:mm)
         const schedule = schedules.find(
-          (s) =>
-            s.date === selectedDateStr &&
-            s.hallName === hall.name &&
-            s.startTime.startsWith(timeSlot)
+          (s) => {
+            // Tarih formatını normalize et
+            let sDate = s.date;
+            if (sDate.includes('T')) {
+              sDate = sDate.split('T')[0];
+            }
+            
+            // Saat formatını normalize et
+            let sTime = s.startTime;
+            if (sTime.includes(':')) {
+              sTime = sTime.slice(0, 5); // HH:mm
+            }
+            
+            return sDate === selectedDateStr &&
+                   s.hallName === hall.name &&
+                   sTime === timeSlot;
+          }
         );
         
         if (schedule) {
           result[timeSlot][hall.name] = {
             available: schedule.status === "Available",
-            schedule,
+            schedule: schedule as ScheduleWithHall, // Event bilgileri zaten schedule'da var
           };
         } else {
           // Schedule yoksa varsayılan olarak müsait kabul et
@@ -234,6 +333,45 @@ export default function TakvimPage() {
   const getEventsForDate = (d: Date) => {
     const ds = formatDateString(d);
     return schedules.filter((s) => s.date === ds);
+  };
+
+  // Bugünkü rezervasyonlar
+  const todayStr = formatDateString(new Date());
+  const todayReservations = useMemo(() => {
+    return schedules
+      .filter((s) => {
+        // Tarih formatını normalize et
+        let sDate = s.date;
+        if (sDate.includes('T')) {
+          sDate = sDate.split('T')[0];
+        }
+        return sDate === todayStr && s.status === "Reserved";
+      })
+      .map((s) => ({
+        ...s,
+        eventName: (s as ScheduleWithHall).eventName || "Etkinlik Adı Yok",
+        eventOwner: (s as ScheduleWithHall).eventOwner || "Bilinmiyor",
+        eventType: (s as ScheduleWithHall).eventType,
+      }))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .slice(0, 5);
+  }, [schedules, todayStr]);
+
+  const getEventTypeName = (eventType?: number): string => {
+    switch (eventType) {
+      case 0:
+        return "Nikah";
+      case 1:
+        return "Nişan";
+      case 2:
+        return "Konser";
+      case 3:
+        return "Toplantı";
+      case 4:
+        return "Özel Etkinlik";
+      default:
+        return "Etkinlik";
+    }
   };
 
   if (loading) {
@@ -483,21 +621,32 @@ export default function TakvimPage() {
                               const isAvailable = availability?.available ?? true;
                               const schedule = availability?.schedule;
                               
+                              const scheduleWithHall = schedule as ScheduleWithHall | undefined;
+                              
                               const handleCellClick = () => {
-                                if (isEditor) {
+                                if (!isAvailable && scheduleWithHall) {
+                                  // Dolu ise detay göster
+                                  setSelectedSchedule(scheduleWithHall);
+                                  setDetailDialogOpen(true);
+                                } else if (isEditor) {
+                                  // Müsait ise ve editor ise düzenleme dialog'u aç
                                   setSelectedTimeSlot(timeSlot);
                                   setSelectedHallForSchedule(hall.id);
-                                  setScheduleStatus(schedule?.status === "Reserved" ? "Available" : "Reserved");
+                                  setScheduleStatus(scheduleWithHall?.status === "Reserved" ? "Available" : "Reserved");
                                   setScheduleDialogOpen(true);
                                 }
                               };
+                              
+                              // Etkinlik adını al (varsa)
+                              const eventName = scheduleWithHall?.eventName;
+                              const displayText = isAvailable ? "Müsait" : (eventName || "Dolu");
                               
                               return (
                                 <td
                                   key={hall.id}
                                   className={cn(
                                     "px-4 py-3 text-center",
-                                    isEditor && "cursor-pointer hover:bg-muted/30"
+                                    (isEditor || !isAvailable) && "cursor-pointer hover:bg-muted/30"
                                   )}
                                   onClick={handleCellClick}
                                 >
@@ -508,16 +657,17 @@ export default function TakvimPage() {
                                         ? "bg-green-100 text-green-700 border border-green-200"
                                         : "bg-red-100 text-red-700 border border-red-200"
                                     )}
+                                    title={!isAvailable && scheduleWithHall ? `Tıklayın: ${eventName || "Detayları görüntüle"}` : undefined}
                                   >
                                     {isAvailable ? (
                                       <>
                                         <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                        Müsait
+                                        {displayText}
                                       </>
                                     ) : (
                                       <>
                                         <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                                        Dolu
+                                        <span className="truncate max-w-[100px]" title={eventName || "Dolu"}>{displayText}</span>
                                       </>
                                     )}
                                   </div>
@@ -663,6 +813,120 @@ export default function TakvimPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Detay Dialog'u */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rezervasyon Detayları</DialogTitle>
+            <DialogDescription>
+              {selectedSchedule && (
+                <>
+                  {(selectedSchedule as ScheduleWithHall).eventName || "Rezervasyon Detayları"} - {formatTimeRange(selectedSchedule)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedSchedule && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Etkinlik Adı</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {(selectedSchedule as ScheduleWithHall).eventName || "Etkinlik Adı Yok"}
+                </div>
+              </div>
+              {(selectedSchedule as ScheduleWithHall).eventOwner && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Rezervasyon Yapan</Label>
+                  <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                    {(selectedSchedule as ScheduleWithHall).eventOwner}
+                  </div>
+                </div>
+              )}
+              {(selectedSchedule as ScheduleWithHall).eventType !== undefined && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Etkinlik Tipi</Label>
+                  <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                    {getEventTypeName((selectedSchedule as ScheduleWithHall).eventType)}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Tarih</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {selectedSchedule.date}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Saat Aralığı</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {formatTimeRange(selectedSchedule)}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Salon</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {selectedSchedule.hallName}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
+              Kapat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bugünkü Rezervasyonlar */}
+      {todayReservations.length > 0 && (
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <CalendarIcon className="h-4 w-4" />
+              Bugünkü Rezervasyonlar
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {todayReservations.map((reservation) => (
+                <div
+                  key={reservation.id}
+                  className="flex items-center justify-between rounded-lg border border-border bg-card p-3 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {reservation.eventName || "Etkinlik Adı Yok"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatTimeRange(reservation)} • {reservation.hallName}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200">
+                      Dolu
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedSchedule(reservation);
+                        setDetailDialogOpen(true);
+                      }}
+                    >
+                      Detay
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

@@ -122,14 +122,55 @@ export function HallFormModal({
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         if (ctx) {
+          // Backend 1000 karakter limitine sahip - görseli çok küçük boyutlara sıkıştırmalıyız
+          // Maksimum boyut: 400x400, kalite: 0.3 (çok düşük kalite ama küçük dosya)
+          const MAX_SIZE = 400;
+          if (width > MAX_SIZE || height > MAX_SIZE) {
+            const scale = Math.min(MAX_SIZE / width, MAX_SIZE / height);
+            width = Math.floor(width * scale);
+            height = Math.floor(height * scale);
+            canvas.width = width;
+            canvas.height = height;
+          }
+          
           ctx.drawImage(img, 0, 0, width, height);
-          // JPEG olarak sıkıştır (kalite: 0.85)
-          const base64String = canvas.toDataURL("image/jpeg", 0.85);
+          
+          // Çok düşük kalite ile sıkıştır (0.3 - küçük dosya boyutu için)
+          let quality = 0.3;
+          let base64String = canvas.toDataURL("image/jpeg", quality);
+          
+          // Hala çok uzunsa, boyutu daha da küçült
+          let attempts = 0;
+          while (base64String.length > 1000 && attempts < 5) {
+            const scale = Math.sqrt(900 / base64String.length); // 900 karakter hedefi
+            width = Math.max(50, Math.floor(width * scale)); // Minimum 50px
+            height = Math.max(50, Math.floor(height * scale));
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            base64String = canvas.toDataURL("image/jpeg", quality);
+            attempts++;
+          }
+          
+          // Son kontrol: Hala çok uzunsa uyarı ver ve görseli gönderme
+          if (base64String.length > 1000) {
+            toast.error("Görsel çok büyük. Lütfen görsel URL'i kullanın veya daha küçük bir görsel seçin.");
+            setForm((p) => ({ ...p, imageUrl: "" }));
+            setImagePreview("");
+            return;
+          }
+          
           setForm((p) => ({ ...p, imageUrl: base64String }));
           setImagePreview(base64String);
         } else {
           // Canvas desteklenmiyorsa direkt kullan
           const base64String = reader.result as string;
+          if (base64String.length > 1000) {
+            toast.error("Görsel çok büyük. Lütfen görsel URL'i kullanın.");
+            setForm((p) => ({ ...p, imageUrl: "" }));
+            setImagePreview("");
+            return;
+          }
           setForm((p) => ({ ...p, imageUrl: base64String }));
           setImagePreview(base64String);
         }
@@ -222,6 +263,17 @@ export function HallFormModal({
     if (form.capacity < 1) {
       toast.error("Kapasite 1 veya daha büyük olmalıdır.");
       return;
+    }
+
+    // Görsel URL kontrolü - Backend 1000 karakter limitine sahip
+    if (form.imageUrl && form.imageUrl.length > 1000) {
+      if (form.imageUrl.startsWith("data:image")) {
+        toast.error("Görsel çok büyük. Lütfen daha küçük bir görsel seçin veya görsel URL'i kullanın.");
+        return;
+      } else {
+        toast.error("Görsel URL'i çok uzun. Maksimum 1000 karakter olmalıdır.");
+        return;
+      }
     }
 
     // Seçilen teknik detayları form'a ekle

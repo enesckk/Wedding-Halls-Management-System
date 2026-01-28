@@ -27,6 +27,10 @@ const FALLBACK_MESSAGE = "Bir hata oluştu.";
  */
 export function toUserFriendlyMessage(err: unknown): string {
   if (err instanceof ApiError) {
+    // Eğer detaylı validation hataları varsa, onları da göster
+    if (err.errors && err.errors.length > 0) {
+      return `${err.message}\n\nDetaylar:\n${err.errors.map((e, i) => `${i + 1}. ${e}`).join("\n")}`;
+    }
     return err.message;
   }
   if (err instanceof Error) {

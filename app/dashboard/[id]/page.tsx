@@ -18,9 +18,10 @@ import { RequestModal } from "@/components/request-modal";
 import { HallFormModal } from "@/components/hall-form-modal";
 import { getHallById } from "@/lib/api/halls";
 import { getSchedulesByHall, updateSchedule } from "@/lib/api/schedules";
+import { getRequests } from "@/lib/api/requests";
 import { useUser } from "@/lib/user-context";
 import { isViewer } from "@/lib/utils/role";
-import type { WeddingHall, Schedule } from "@/lib/types";
+import type { WeddingHall, Schedule, Request } from "@/lib/types";
 import {
   ArrowLeft,
   Calendar,
@@ -57,17 +58,64 @@ export default function HallDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const [h, s] = await Promise.all([
+      const [h, s, requests] = await Promise.all([
         getHallById(id),
         getSchedulesByHall(id),
+        getRequests().catch(() => []), // Request'ler yüklenemezse boş array döndür
       ]);
       setHall(h ?? null);
       const allScheds = s ?? [];
-      setAllSchedules(allScheds); // Tüm schedule'ları sakla (müsaitlik oranı için)
+      
+      // Request'leri Schedule'larla eşleştir (sadece Answered olanlar)
+      const answeredRequests = requests.filter((r: Request) => r.status === "Answered");
+      const schedulesWithRequests = allScheds.map((schedule) => {
+        if (schedule.status === "Reserved") {
+          // Tarih ve saat formatını normalize et
+          let reqDate = schedule.date;
+          if (reqDate.includes('T')) {
+            reqDate = reqDate.split('T')[0];
+          }
+          
+          // Eşleşen Request'i bul
+          const matchingRequest = answeredRequests.find((req: Request) => {
+            let reqEventDate = req.eventDate;
+            if (reqEventDate.includes('T')) {
+              reqEventDate = reqEventDate.split('T')[0];
+            }
+            
+            // Saat formatını normalize et
+            let reqTime = req.eventTime;
+            if (reqTime.includes(':')) {
+              reqTime = reqTime.slice(0, 5); // HH:mm
+            }
+            let scheduleTime = schedule.startTime;
+            if (scheduleTime.includes(':')) {
+              scheduleTime = scheduleTime.slice(0, 5); // HH:mm
+            }
+            
+            return req.weddingHallId === schedule.weddingHallId &&
+                   reqEventDate === reqDate &&
+                   reqTime === scheduleTime;
+          });
+          
+          if (matchingRequest) {
+            return {
+              ...schedule,
+              eventName: matchingRequest.eventName,
+              eventOwner: matchingRequest.eventOwner,
+              eventType: matchingRequest.eventType,
+              requestId: matchingRequest.id,
+            };
+          }
+        }
+        return schedule;
+      });
+      
+      setAllSchedules(schedulesWithRequests); // Tüm schedule'ları sakla (müsaitlik oranı için)
       
       // Bugünün schedule'larını göster
       const today = todayLocal();
-      const todaySchedules = allScheds.filter((x) => x.date === today);
+      const todaySchedules = schedulesWithRequests.filter((x) => x.date === today);
       
       // Eğer bugün için schedule varsa sadece bugünü göster
       if (todaySchedules.length > 0) {
@@ -79,7 +127,7 @@ export default function HallDetailPage() {
           date.setDate(date.getDate() + i);
           return todayLocal(date);
         });
-        const upcomingSchedules = allScheds.filter((x) => 
+        const upcomingSchedules = schedulesWithRequests.filter((x) => 
           next7Days.includes(x.date)
         ).sort((a, b) => {
           if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -172,6 +220,9 @@ export default function HallDetailPage() {
   const availabilityPercentage = totalSlots > 0
     ? Math.round((availableSlots / totalSlots) * 100)
     : 100; // Schedule yoksa %100 müsait
+  
+  // Schedule var mı kontrolü - eğer hiç schedule yoksa istatistikleri göstermemeli
+  const hasAnySchedules = allSchedules.length > 0;
 
   return (
     <div className="space-y-6">
@@ -220,43 +271,61 @@ export default function HallDetailPage() {
         </div>
 
         <div className="space-y-4">
-          <Card className="border-border bg-card">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="mb-2 text-4xl font-bold text-primary">
-                  %{availabilityPercentage}
-                </div>
-                <p className="text-sm text-muted-foreground">Müsaitlik Oranı</p>
-              </div>
-              <div className="mt-4 h-3 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${availabilityPercentage}%` }}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          {hasAnySchedules ? (
+            <>
+              <Card className="border-border bg-card">
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="mb-2 text-4xl font-bold text-primary">
+                      %{availabilityPercentage}
+                    </div>
+                    <p className="text-sm text-muted-foreground">Müsaitlik Oranı</p>
+                  </div>
+                  <div className="mt-4 h-3 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${availabilityPercentage}%` }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="border-green-200 bg-green-50">
-              <CardContent className="p-4 text-center">
-                <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-600" />
-                <div className="text-2xl font-bold text-green-700">
-                  {todayAvailableSlots}
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="border-green-200 bg-green-50">
+                  <CardContent className="p-4 text-center">
+                    <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-green-600" />
+                    <div className="text-2xl font-bold text-green-700">
+                      {todayAvailableSlots}
+                    </div>
+                    <p className="text-xs text-green-600">Müsait (Bugün)</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-red-200 bg-red-50">
+                  <CardContent className="p-4 text-center">
+                    <XCircle className="mx-auto mb-2 h-8 w-8 text-red-600" />
+                    <div className="text-2xl font-bold text-red-700">
+                      {todayBookedSlots}
+                    </div>
+                    <p className="text-xs text-red-600">Dolu (Bugün)</p>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          ) : (
+            <Card className="border-border bg-card">
+              <CardContent className="p-4">
+                <div className="text-center">
+                  <Calendar className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm font-medium text-foreground">
+                    Müsaitlik Kaydı Yok
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Bu salon için henüz müsaitlik kaydı oluşturulmamış
+                  </p>
                 </div>
-                <p className="text-xs text-green-600">Müsait (Bugün)</p>
               </CardContent>
             </Card>
-            <Card className="border-red-200 bg-red-50">
-              <CardContent className="p-4 text-center">
-                <XCircle className="mx-auto mb-2 h-8 w-8 text-red-600" />
-                <div className="text-2xl font-bold text-red-700">
-                  {todayBookedSlots}
-                </div>
-                <p className="text-xs text-red-600">Dolu (Bugün)</p>
-              </CardContent>
-            </Card>
-          </div>
+          )}
 
           {isViewer(user?.role) && (
             <RequestModal hallId={hall.id} hallName={hall.name} />

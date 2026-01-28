@@ -27,6 +27,11 @@ export interface Schedule {
   startTime: string;
   endTime: string;
   status: "Available" | "Reserved";
+  // Request bilgileri (eğer Reserved ise)
+  eventName?: string;
+  eventOwner?: string;
+  eventType?: number;
+  requestId?: string;
 }
 
 export interface User {

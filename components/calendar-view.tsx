@@ -5,6 +5,15 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { getHalls } from "@/lib/api/halls";
 import { getSchedulesByHall } from "@/lib/api/schedules";
 import { getRequests } from "@/lib/api/requests";
@@ -35,7 +44,13 @@ function formatDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-type ScheduleWithHall = Schedule & { hallName: string; eventName?: string };
+type ScheduleWithHall = Schedule & { 
+  hallName: string;
+  eventName?: string;
+  eventOwner?: string;
+  eventType?: number;
+  requestId?: string;
+};
 
 export function CalendarView() {
   const router = useRouter();
@@ -46,6 +61,8 @@ export function CalendarView() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedReservation, setSelectedReservation] = useState<ScheduleWithHall | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -95,7 +112,10 @@ export function CalendarView() {
         
         return {
           ...schedule,
-          eventName: matchingRequest?.eventName
+          eventName: matchingRequest?.eventName,
+          eventOwner: matchingRequest?.eventOwner,
+          eventType: matchingRequest?.eventType,
+          requestId: matchingRequest?.id,
         };
       });
       
@@ -120,7 +140,14 @@ export function CalendarView() {
   }, [schedules, selectedStr]);
 
   const schedulesToday = useMemo(() => {
-    return schedules.filter((s) => s.date === todayStr);
+    return schedules.filter((s) => {
+      // Tarih formatını normalize et
+      let sDate = s.date;
+      if (sDate.includes('T')) {
+        sDate = sDate.split('T')[0];
+      }
+      return sDate === todayStr;
+    });
   }, [schedules, todayStr]);
 
   // Bugünkü rezervasyon sayısı (sadece Reserved olanlar)
@@ -223,16 +250,39 @@ export function CalendarView() {
       return schedulesToday
         .filter((s) => s.status === "Reserved")
         .map((s) => ({
-          hallId: s.weddingHallId,
-          hallName: s.hallName || "Bilinmeyen Salon",
-          timeRange: `${s.startTime.slice(0, 5)} - ${s.endTime.slice(0, 5)}`,
-          capacity: halls.find((h) => h.id === s.weddingHallId)?.capacity ?? 0,
+          ...s,
+          eventName: (s as ScheduleWithHall).eventName || "Etkinlik Adı Yok",
+          eventOwner: (s as ScheduleWithHall).eventOwner || "Bilinmiyor",
+          eventType: (s as ScheduleWithHall).eventType,
         }))
-        .sort((a, b) => a.timeRange.localeCompare(b.timeRange))
+        .sort((a, b) => a.startTime.localeCompare(b.startTime))
         .slice(0, 5);
     },
-    [schedulesToday, halls]
+    [schedulesToday]
   );
+
+  const getEventTypeName = (eventType?: number): string => {
+    switch (eventType) {
+      case 0:
+        return "Nikah";
+      case 1:
+        return "Nişan";
+      case 2:
+        return "Konser";
+      case 3:
+        return "Toplantı";
+      case 4:
+        return "Özel Etkinlik";
+      default:
+        return "Etkinlik";
+    }
+  };
+
+  function formatTimeRange(s: Schedule): string {
+    const start = s.startTime.slice(0, 5);
+    const end = s.endTime.slice(0, 5);
+    return `${start} - ${end}`;
+  }
 
   if (loading) {
     return (
@@ -551,10 +601,10 @@ export function CalendarView() {
                     </div>
                     <div>
                       <p className="font-medium text-foreground">
-                        {r.hallName}
+                        {(r as ScheduleWithHall).eventName || "Etkinlik Adı Yok"}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {r.timeRange}
+                        {formatTimeRange(r)} • {r.hallName}
                       </p>
                     </div>
                   </div>
@@ -568,7 +618,10 @@ export function CalendarView() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => router.push(`/dashboard/${r.hallId}`)}
+                      onClick={() => {
+                        setSelectedReservation(r as ScheduleWithHall);
+                        setDetailDialogOpen(true);
+                      }}
                     >
                       Detay
                     </Button>
@@ -579,6 +632,71 @@ export function CalendarView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Detay Dialog'u */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rezervasyon Detayları</DialogTitle>
+            <DialogDescription>
+              {selectedReservation && (
+                <>
+                  {selectedReservation.eventName || "Rezervasyon Detayları"} - {formatTimeRange(selectedReservation)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedReservation && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Etkinlik Adı</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {selectedReservation.eventName || "Etkinlik Adı Yok"}
+                </div>
+              </div>
+              {selectedReservation.eventOwner && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Rezervasyon Yapan</Label>
+                  <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                    {selectedReservation.eventOwner}
+                  </div>
+                </div>
+              )}
+              {selectedReservation.eventType !== undefined && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Etkinlik Tipi</Label>
+                  <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                    {getEventTypeName(selectedReservation.eventType)}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Tarih</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {selectedReservation.date.split('T')[0]}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Saat Aralığı</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {formatTimeRange(selectedReservation)}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Salon</Label>
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                  {selectedReservation.hallName}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
+              Kapat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
