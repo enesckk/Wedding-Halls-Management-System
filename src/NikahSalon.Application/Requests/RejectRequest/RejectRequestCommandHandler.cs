@@ -1,7 +1,6 @@
 using NikahSalon.Application.DTOs;
 using NikahSalon.Application.Interfaces;
 using NikahSalon.Domain.Enums;
-using Microsoft.EntityFrameworkCore;
 
 namespace NikahSalon.Application.Requests.RejectRequest;
 
