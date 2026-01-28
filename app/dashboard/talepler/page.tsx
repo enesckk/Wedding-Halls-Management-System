@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@/lib/user-context";
 import { isEditor as isEditorRole, isViewer as isViewerRole } from "@/lib/utils/role";
-import { getRequests, approveRequest, rejectRequest } from "@/lib/api/requests";
+import { getRequests, approveRequest, rejectRequest, updateRequest, deleteRequest, type UpdateRequestData } from "@/lib/api/requests";
 import { getHalls } from "@/lib/api/halls";
 import { getMessagesByRequestId, createMessage, type MessageDto } from "@/lib/api/messages";
 import type { Request as Req, WeddingHall } from "@/lib/types";
@@ -22,6 +22,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { Unauthorized } from "@/components/unauthorized";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import {
   FileText,
   Clock,
   CheckCircle2,
@@ -34,6 +42,8 @@ import {
   ThumbsUp,
   ThumbsDown,
   Info,
+  Edit,
+  Trash2,
 } from "lucide-react";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { sanitizeText } from "@/lib/utils/sanitize";
@@ -115,6 +125,11 @@ export default function RequestsPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null);
   const [rejectionMessages, setRejectionMessages] = useState<Record<string, string>>({}); // requestId -> rejection message
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<Req | null>(null);
+  const [editFormData, setEditFormData] = useState<UpdateRequestData>({});
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
 
   const loadRequests = useCallback(async () => {
     if (!user) return;
@@ -257,6 +272,67 @@ export default function RequestsPage() {
     }
   };
 
+  const handleEditClick = (req: Req) => {
+    setEditingRequest(req);
+    setEditFormData({
+      weddingHallId: req.weddingHallId,
+      eventName: req.eventName,
+      eventOwner: req.eventOwner,
+      eventType: req.eventType,
+      eventDate: req.eventDate.split('T')[0], // Sadece tarih kısmını al
+      eventTime: req.eventTime,
+      message: req.message,
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingRequest) return;
+    
+    if (!editFormData.eventName?.trim() || !editFormData.eventOwner?.trim() || !editFormData.eventDate || !editFormData.eventTime) {
+      toast.error("Lütfen tüm zorunlu alanları doldurun.");
+      return;
+    }
+
+    setActionId(editingRequest.id);
+    try {
+      await updateRequest(editingRequest.id, editFormData);
+      toast.success("Talep başarıyla güncellendi.");
+      await loadRequests();
+      setEditDialogOpen(false);
+      setEditingRequest(null);
+      setEditFormData({});
+    } catch (e) {
+      console.error("updateRequest error:", e);
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleDeleteClick = (req: Req) => {
+    setDeletingRequestId(req.id);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingRequestId) return;
+    
+    setActionId(deletingRequestId);
+    try {
+      await deleteRequest(deletingRequestId);
+      toast.success("Talep başarıyla silindi.");
+      await loadRequests();
+      setDeleteDialogOpen(false);
+      setDeletingRequestId(null);
+    } catch (e) {
+      console.error("deleteRequest error:", e);
+      toast.error(toUserFriendlyMessage(e));
+    } finally {
+      setActionId(null);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -356,15 +432,16 @@ export default function RequestsPage() {
             {requests.map((req) => (
               <Card 
                 key={req.id} 
-                className="border-l-4 transition-colors"
+                className="cursor-pointer border-l-4 transition-colors hover:bg-muted/50"
                 style={{
                   borderLeftColor: 
                     req.status === "Answered" ? "#22c55e" :
                     req.status === "Rejected" ? "#ef4444" : "#eab308"
                 }}
+                onClick={() => setSelected(req)}
               >
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-3 flex-wrap">
                         <Building2 className="h-5 w-5 text-primary" />
@@ -391,6 +468,36 @@ export default function RequestsPage() {
                           </div>
                         </div>
                       )}
+                      
+                      {/* Viewer için düzenleme ve silme butonları - sadece Pending durumunda */}
+                      {req.status === "Pending" && (
+                        <div className="flex items-center gap-2 mt-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditClick(req);
+                            }}
+                            className="gap-2"
+                          >
+                            <Edit className="h-4 w-4" />
+                            Düzenle
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClick(req);
+                            }}
+                            className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Sil
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -398,11 +505,309 @@ export default function RequestsPage() {
             ))}
           </div>
         )}
+
+        {/* Viewer için Talep Detay Dialog'u (sadece görüntüleme + mesajlar) */}
+        {selected && (
+          <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-primary" />
+                  {selected.hallName}
+                </DialogTitle>
+                <DialogDescription>
+                  Talep detaylarını ve gelen mesajları görüntüleyin
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Durum</Label>
+                  <div className="mt-1">
+                    <StatusBadge status={selected.status} />
+                  </div>
+                </div>
+
+                {selected.eventName && (
+                  <div>
+                    <Label className="text-sm font-medium">Etkinlik Adı</Label>
+                    <p className="mt-1 text-sm text-foreground">{selected.eventName}</p>
+                  </div>
+                )}
+
+                {selected.eventOwner && (
+                  <div>
+                    <Label className="text-sm font-medium">Etkinlik Sahibi</Label>
+                    <p className="mt-1 text-sm text-foreground">{selected.eventOwner}</p>
+                  </div>
+                )}
+
+                <div>
+                  <Label className="text-sm font-medium">Etkinlik Türü</Label>
+                  <p className="mt-1 text-sm text-foreground">{getEventTypeLabel(selected.eventType)}</p>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">Etkinlik Tarihi ve Saati</Label>
+                  <p className="mt-1 text-sm text-foreground">
+                    {formatEventDate(selected.eventDate, selected.eventTime)}
+                  </p>
+                </div>
+
+                {selected.message && (
+                  <div>
+                    <Label className="text-sm font-medium">Açıklama</Label>
+                    <div className="mt-1 rounded-lg bg-muted p-3">
+                      <p className="text-sm whitespace-pre-wrap">{sanitizeText(selected.message)}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="border-t border-border pt-4">
+                  <Label className="text-sm font-medium mb-2 block">Mesajlar</Label>
+                  <div className="max-h-[200px] overflow-y-auto space-y-3 border rounded-lg p-4">
+                    {loadingMessages ? (
+                      <div className="flex justify-center py-4">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      </div>
+                    ) : messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <MessageSquare className="h-8 w-8 text-muted-foreground/50" />
+                        <p className="mt-2 text-xs text-muted-foreground">Henüz mesaj yok</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {messages.map((msg) => {
+                          const isCurrentUser = msg.senderUserId === user?.id;
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex gap-2 ${isCurrentUser ? "flex-row-reverse" : ""}`}
+                            >
+                              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                              </div>
+                              <div className={`max-w-[75%] ${isCurrentUser ? "text-right" : ""}`}>
+                                <div
+                                  className={`rounded-lg p-2.5 ${
+                                    isCurrentUser
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-muted"
+                                  }`}
+                                >
+                                  <p className="text-xs whitespace-pre-wrap">
+                                    {sanitizeText(msg.content)}
+                                  </p>
+                                </div>
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  {formatDate(msg.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setSelected(null)}>
+                  Kapat
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Düzenleme Dialog */}
+        <Dialog 
+          open={editDialogOpen} 
+          onOpenChange={(open) => {
+            setEditDialogOpen(open);
+            // Edit dialog açıldığında detay dialog'unu kapat
+            if (open && selected) {
+              setSelected(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Talep Düzenle</DialogTitle>
+              <DialogDescription>
+                Talebinizi düzenleyin. Sadece bekleyen talepler düzenlenebilir.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-hall">
+                  Salon <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={editFormData.weddingHallId || ""}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, weddingHallId: value })}
+                >
+                  <SelectTrigger id="edit-hall">
+                    <SelectValue placeholder="Salon seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {halls.map((hall) => (
+                      <SelectItem key={hall.id} value={hall.id}>
+                        {hall.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-event-name">
+                  Etkinlik Adı <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="edit-event-name"
+                  value={editFormData.eventName || ""}
+                  onChange={(e) => setEditFormData({ ...editFormData, eventName: e.target.value })}
+                  placeholder="Örn: Ahmet ve Ayşe'nin Nikahı"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-event-owner">
+                  Etkinlik Sahibi <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="edit-event-owner"
+                  value={editFormData.eventOwner || ""}
+                  onChange={(e) => setEditFormData({ ...editFormData, eventOwner: e.target.value })}
+                  placeholder="Örn: Ahmet Yılmaz"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-event-type">
+                  Etkinlik Türü <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={editFormData.eventType?.toString() || ""}
+                  onValueChange={(value) => setEditFormData({ ...editFormData, eventType: parseInt(value) })}
+                >
+                  <SelectTrigger id="edit-event-type">
+                    <SelectValue placeholder="Etkinlik türü seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EVENT_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value.toString()}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-event-date">
+                    Etkinlik Tarihi <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="edit-event-date"
+                    type="date"
+                    value={editFormData.eventDate || ""}
+                    onChange={(e) => setEditFormData({ ...editFormData, eventDate: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-event-time">
+                    Etkinlik Saati <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="edit-event-time"
+                    type="time"
+                    value={editFormData.eventTime || ""}
+                    onChange={(e) => setEditFormData({ ...editFormData, eventTime: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-message">Açıklama</Label>
+                <Textarea
+                  id="edit-message"
+                  value={editFormData.message || ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value.length <= 1000) {
+                      setEditFormData({ ...editFormData, message: value });
+                    }
+                  }}
+                  placeholder="Ek bilgiler (opsiyonel)"
+                  rows={4}
+                  maxLength={1000}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {(editFormData.message || "").length}/1000 karakter
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditDialogOpen(false);
+                  setEditingRequest(null);
+                  setEditFormData({});
+                }}
+              >
+                İptal
+              </Button>
+              <Button
+                onClick={handleEditSave}
+                disabled={actionId === editingRequest?.id || !editFormData.eventName?.trim() || !editFormData.eventOwner?.trim() || !editFormData.eventDate || !editFormData.eventTime}
+              >
+                {actionId === editingRequest?.id ? "Kaydediliyor..." : "Kaydet"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Silme Onay Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Talep Sil</DialogTitle>
+              <DialogDescription>
+                Bu talebi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setDeletingRequestId(null);
+                }}
+              >
+                İptal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteConfirm}
+                disabled={actionId === deletingRequestId}
+              >
+                {actionId === deletingRequestId ? "Siliniyor..." : "Sil"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
 
   // Editor için yönetim görünümü
+  const isEditor = isEditorRole(user?.role);
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
   const approvedCount = requests.filter((r) => r.status === "Answered").length;
   const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
@@ -582,44 +987,65 @@ export default function RequestsPage() {
                 </div>
               )}
 
-              {selected.status === "Pending" && (
+              {/* Editor için işlem butonları */}
+              {isEditor && (
                 <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-                  <Button
-                    className="gap-2 bg-green-600 text-white hover:bg-green-700"
-                    disabled={actionId === selected.id}
-                    onClick={async () => {
-                      if (!selected) return;
-                      setActionId(selected.id);
-                      try {
-                        await approveRequest(selected.id);
-                        toast.success("Talep onaylandı. Müsaitlik oluşturuldu.");
-                        await loadRequests();
-                        setSelected(null);
-                      } catch (e) {
-                        console.error("approveRequest error:", e);
-                        toast.error(toUserFriendlyMessage(e));
-                      } finally {
-                        setActionId(null);
-                      }
-                    }}
-                  >
-                    <ThumbsUp className="h-4 w-4" />
-                    {actionId === selected.id ? "İşleniyor..." : "Onayla"}
-                  </Button>
-                  <Button
+                  {/* Düzenleme butonu - tüm durumlar için - ŞİMDİLİK KAPALI */}
+                  {/* <Button
                     variant="outline"
-                    className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
-                    disabled={actionId === selected.id}
+                    className="gap-2"
                     onClick={() => {
                       if (!selected) return;
-                      setRejectingRequestId(selected.id);
-                      setRejectReason("");
-                      setRejectDialogOpen(true);
+                      handleEditClick(selected);
                     }}
                   >
-                    <ThumbsDown className="h-4 w-4" />
-                    Reddet
-                  </Button>
+                    <Edit className="h-4 w-4" />
+                    Düzenle
+                  </Button> */}
+
+                  {/* Onayla butonu - sadece Pending durumunda */}
+                  {selected.status === "Pending" && (
+                    <Button
+                      className="gap-2 bg-green-600 text-white hover:bg-green-700"
+                      disabled={actionId === selected.id}
+                      onClick={async () => {
+                        if (!selected) return;
+                        setActionId(selected.id);
+                        try {
+                          await approveRequest(selected.id);
+                          toast.success("Talep onaylandı. Müsaitlik oluşturuldu.");
+                          await loadRequests();
+                          setSelected(null);
+                        } catch (e) {
+                          console.error("approveRequest error:", e);
+                          toast.error(toUserFriendlyMessage(e));
+                        } finally {
+                          setActionId(null);
+                        }
+                      }}
+                    >
+                      <ThumbsUp className="h-4 w-4" />
+                      {actionId === selected.id ? "İşleniyor..." : "Onayla"}
+                    </Button>
+                  )}
+
+                  {/* Reddet butonu - sadece Pending durumunda */}
+                  {selected.status === "Pending" && (
+                    <Button
+                      variant="outline"
+                      className="gap-2 border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      disabled={actionId === selected.id}
+                      onClick={() => {
+                        if (!selected) return;
+                        setRejectingRequestId(selected.id);
+                        setRejectReason("");
+                        setRejectDialogOpen(true);
+                      }}
+                    >
+                      <ThumbsDown className="h-4 w-4" />
+                      Reddet
+                    </Button>
+                  )}
                 </div>
               )}
 

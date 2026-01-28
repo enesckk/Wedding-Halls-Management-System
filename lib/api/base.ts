@@ -7,7 +7,7 @@ const getToken = (): string | null => {
   return sessionStorage.getItem(TOKEN_KEY);
 };
 
-export const getBaseUrl = (): string => {
+const getBaseUrl = (): string => {
   return process.env.NEXT_PUBLIC_API_URL ?? "";
 };
 

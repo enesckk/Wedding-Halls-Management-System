@@ -102,6 +102,7 @@ export const weddingHalls: WeddingHall[] = [
       "Modern mimarisi ve geniş kapasitesiyle şehrimizin en prestijli nikah salonudur. Klima, ses sistemi ve profesyonel aydınlatma sistemleri mevcuttur.",
     imageUrl:
       "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&q=80",
+    technicalDetails: "Klima sistemi, profesyonel ses sistemi, LED aydınlatma, projektör, WiFi, park alanı",
     availability: [
       { id: "1-1", timeRange: "09:00 - 10:00", status: "available" },
       { id: "1-2", timeRange: "10:30 - 11:30", status: "booked" },
@@ -120,6 +121,7 @@ export const weddingHalls: WeddingHall[] = [
       "Şık ve samimi atmosferiyle özel günlerinizi unutulmaz kılacak bir mekan. Modern dekorasyonu ve merkezi konumuyla tercih edilen salonlarımızdan biridir.",
     imageUrl:
       "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=800&q=80",
+    technicalDetails: "Klima sistemi, ses sistemi, aydınlatma, WiFi",
     availability: [
       { id: "2-1", timeRange: "09:00 - 10:00", status: "booked" },
       { id: "2-2", timeRange: "10:30 - 11:30", status: "available" },
@@ -138,6 +140,7 @@ export const weddingHalls: WeddingHall[] = [
       "Doğayla iç içe, açık hava nikah törenleri için ideal bir mekan. Geniş bahçesi ve muhteşem manzarasıyla hayalinizdeki nikah törenini gerçekleştirin.",
     imageUrl:
       "https://images.unsplash.com/photo-1478146896981-b80fe463b330?w=800&q=80",
+    technicalDetails: "Açık hava alanı, ses sistemi, çadır kurulum alanı, park alanı, WiFi",
     availability: [
       { id: "3-1", timeRange: "09:00 - 10:00", status: "available" },
       { id: "3-2", timeRange: "10:30 - 11:30", status: "available" },
@@ -156,6 +159,7 @@ export const weddingHalls: WeddingHall[] = [
       "Restore edilmiş tarihi konağımızda, geleneksel Türk mimarisiyle bezeli bu özel mekanda nikah töreninizi gerçekleştirin.",
     imageUrl:
       "https://images.unsplash.com/photo-1510076857177-7470076d4098?w=800&q=80",
+    technicalDetails: "Tarihi yapı, klima sistemi, ses sistemi, geleneksel dekorasyon, WiFi",
     availability: [
       { id: "4-1", timeRange: "09:00 - 10:00", status: "booked" },
       { id: "4-2", timeRange: "10:30 - 11:30", status: "booked" },
@@ -174,6 +178,7 @@ export const weddingHalls: WeddingHall[] = [
       "Minimalist tasarımı ve son teknoloji donanımlarıyla modern çiftler için ideal bir nikah salonu. LED aydınlatma ve dijital sunum sistemleri mevcuttur.",
     imageUrl:
       "https://images.unsplash.com/photo-1505236858219-8359eb29e329?w=800&q=80",
+    technicalDetails: "LED aydınlatma, dijital sunum sistemi, klima, profesyonel ses sistemi, WiFi, park alanı",
     availability: [
       { id: "5-1", timeRange: "09:00 - 10:00", status: "available" },
       { id: "5-2", timeRange: "10:30 - 11:30", status: "available" },
@@ -192,6 +197,7 @@ export const weddingHalls: WeddingHall[] = [
       "Eşsiz deniz manzarasıyla nikah töreninize romantik bir atmosfer katın. Panoramik pencereleri ve teras alanıyla unutulmaz anılar biriktirin.",
     imageUrl:
       "https://images.unsplash.com/photo-1469371670807-013ccf25f16a?w=800&q=80",
+    technicalDetails: "Panoramik pencere, teras alanı, klima, ses sistemi, WiFi, deniz manzarası",
     availability: [
       { id: "6-1", timeRange: "09:00 - 10:00", status: "booked" },
       { id: "6-2", timeRange: "10:30 - 11:30", status: "available" },

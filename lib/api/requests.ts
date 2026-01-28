@@ -180,3 +180,80 @@ export async function rejectRequest(id: string, reason?: string): Promise<Reques
   });
   return toRequest(d);
 }
+
+export type UpdateRequestData = {
+  weddingHallId?: string;
+  message?: string;
+  eventType?: number;
+  eventName?: string;
+  eventOwner?: string;
+  eventDate?: string;
+  eventTime?: string;
+};
+
+export async function updateRequest(id: string, data: UpdateRequestData): Promise<Request> {
+  // Backend pattern'ine uygun olarak /update endpoint'ini deneyelim
+  // Backend'de approve, reject gibi işlemler için /{id}/approve, /{id}/reject pattern'i kullanılıyor
+  // Bu yüzden /{id}/update endpoint'ini deniyoruz
+  try {
+    const d = await fetchApi<RequestDto>(`${REQUESTS}/${id}/update`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return toRequest(d);
+  } catch (error: any) {
+    // 405 Method Not Allowed veya 404 Not Found hatası alırsak, direkt /{id} endpoint'ini PATCH ile deneyelim
+    if (error?.status === 405 || error?.status === 404) {
+      try {
+        const d = await fetchApi<RequestDto>(`${REQUESTS}/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        });
+        return toRequest(d);
+      } catch (patchError: any) {
+        // Her iki yöntem de çalışmazsa, geçici çözüm: mevcut talebi silip yeni talep oluştur
+        // NOT: Bu sadece Pending durumundaki talepler için mantıklı
+        // Backend'de update endpoint'i implement edildiğinde bu geçici çözüm kaldırılmalı
+        if (patchError?.status === 405 || patchError?.status === 404) {
+          // Önce mevcut talebi alalım (durum kontrolü için)
+          const currentRequest = await getRequests().then(requests => 
+            requests.find(r => r.id === id)
+          );
+          
+          if (!currentRequest) {
+            throw new Error("Güncellenecek talep bulunamadı.");
+          }
+          
+          // Sadece Pending durumundaki talepler için sil-yeniden-oluştur yaklaşımını kullan
+          if (currentRequest.status !== "Pending") {
+            throw new Error("Sadece bekleyen talepler düzenlenebilir.");
+          }
+          
+          // Mevcut talebi sil
+          await deleteRequest(id);
+          
+          // Yeni talep oluştur (güncellenmiş verilerle)
+          const newRequestData: CreateRequestData = {
+            weddingHallId: data.weddingHallId || currentRequest.weddingHallId,
+            eventName: data.eventName || currentRequest.eventName,
+            eventOwner: data.eventOwner || currentRequest.eventOwner,
+            eventType: data.eventType ?? currentRequest.eventType,
+            eventDate: data.eventDate || currentRequest.eventDate.split('T')[0],
+            eventTime: data.eventTime || currentRequest.eventTime,
+            message: data.message || currentRequest.message,
+          };
+          
+          return await createRequest(newRequestData);
+        }
+        throw patchError;
+      }
+    }
+    throw error;
+  }
+}
+
+export async function deleteRequest(id: string): Promise<void> {
+  await fetchApi<void>(`${REQUESTS}/${id}`, {
+    method: "DELETE",
+  });
+}

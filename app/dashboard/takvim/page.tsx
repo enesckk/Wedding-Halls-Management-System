@@ -16,7 +16,7 @@ import { getSchedulesByHall, createSchedule, updateSchedule, type UpdateSchedule
 import { getRequests } from "@/lib/api/requests";
 import type { Schedule, WeddingHall, Request } from "@/lib/types";
 import { useUser } from "@/lib/user-context";
-import { isEditor as isEditorRole } from "@/lib/utils/role";
+import { isEditor as isEditorRole, isViewer as isViewerRole } from "@/lib/utils/role";
 import {
   ChevronLeft,
   ChevronRight,
@@ -624,17 +624,14 @@ export default function TakvimPage() {
                               const scheduleWithHall = schedule as ScheduleWithHall | undefined;
                               
                               const handleCellClick = () => {
-                                if (!isAvailable && scheduleWithHall) {
-                                  // Dolu ise detay göster
-                                  setSelectedSchedule(scheduleWithHall);
-                                  setDetailDialogOpen(true);
-                                } else if (isEditor) {
-                                  // Müsait ise ve editor ise düzenleme dialog'u aç
+                                // Sadece editor için müsait kısımlara tıklayınca düzenleme dialog'u aç
+                                if (isEditor && isAvailable) {
                                   setSelectedTimeSlot(timeSlot);
                                   setSelectedHallForSchedule(hall.id);
                                   setScheduleStatus(scheduleWithHall?.status === "Reserved" ? "Available" : "Reserved");
                                   setScheduleDialogOpen(true);
                                 }
+                                // Dolu kısımlara tıklayınca hiçbir şey yapma
                               };
                               
                               // Etkinlik adını al (varsa)
@@ -646,7 +643,7 @@ export default function TakvimPage() {
                                   key={hall.id}
                                   className={cn(
                                     "px-4 py-3 text-center",
-                                    (isEditor || !isAvailable) && "cursor-pointer hover:bg-muted/30"
+                                    isEditor && isAvailable && "cursor-pointer hover:bg-muted/30"
                                   )}
                                   onClick={handleCellClick}
                                 >
@@ -657,7 +654,7 @@ export default function TakvimPage() {
                                         ? "bg-green-100 text-green-700 border border-green-200"
                                         : "bg-red-100 text-red-700 border border-red-200"
                                     )}
-                                    title={!isAvailable && scheduleWithHall ? `Tıklayın: ${eventName || "Detayları görüntüle"}` : undefined}
+                                    title={!isAvailable && scheduleWithHall ? `${eventName || "Dolu"}` : undefined}
                                   >
                                     {isAvailable ? (
                                       <>
@@ -911,16 +908,18 @@ export default function TakvimPage() {
                     <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200">
                       Dolu
                     </Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedSchedule(reservation);
-                        setDetailDialogOpen(true);
-                      }}
-                    >
-                      Detay
-                    </Button>
+                    {!isViewerRole(user?.role) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedSchedule(reservation);
+                          setDetailDialogOpen(true);
+                        }}
+                      >
+                        Detay
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

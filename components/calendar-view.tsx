@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useUser } from "@/lib/user-context";
+import { isViewer } from "@/lib/utils/role";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +56,7 @@ type ScheduleWithHall = Schedule & {
 
 export function CalendarView() {
   const router = useRouter();
+  const { user } = useUser();
   const [halls, setHalls] = useState<WeddingHall[]>([]);
   const [schedules, setSchedules] = useState<ScheduleWithHall[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
@@ -615,16 +618,18 @@ export function CalendarView() {
                     >
                       Dolu
                     </Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedReservation(r as ScheduleWithHall);
-                        setDetailDialogOpen(true);
-                      }}
-                    >
-                      Detay
-                    </Button>
+                    {!isViewer(user?.role) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedReservation(r as ScheduleWithHall);
+                          setDetailDialogOpen(true);
+                        }}
+                      >
+                        Detay
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))
