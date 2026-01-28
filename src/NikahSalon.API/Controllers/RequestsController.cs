@@ -12,6 +12,7 @@ using NikahSalon.Application.Requests.DeleteRequest;
 using NikahSalon.Application.Requests.GetRequestById;
 using NikahSalon.Application.Requests.GetRequests;
 using NikahSalon.Application.Requests.RejectRequest;
+using NikahSalon.Application.Requests.UpdateRequest;
 
 namespace NikahSalon.API.Controllers;
 
@@ -28,6 +29,8 @@ public sealed class RequestsController : ControllerBase
     private readonly RejectRequestCommandHandler _rejectHandler;
     private readonly DeleteRequestCommandHandler _deleteHandler;
     private readonly CreateRequestCommandValidator _createValidator;
+    private readonly UpdateRequestCommandHandler _updateHandler;
+    private readonly UpdateRequestCommandValidator _updateValidator;
     private readonly CreateMessageCommandHandler _createMessageHandler;
     private readonly DeleteMessageCommandHandler _deleteMessageHandler;
     private readonly GetMessagesByRequestIdQueryHandler _getMessagesHandler;
@@ -42,6 +45,8 @@ public sealed class RequestsController : ControllerBase
         RejectRequestCommandHandler rejectHandler,
         DeleteRequestCommandHandler deleteHandler,
         CreateRequestCommandValidator createValidator,
+        UpdateRequestCommandHandler updateHandler,
+        UpdateRequestCommandValidator updateValidator,
         CreateMessageCommandHandler createMessageHandler,
         DeleteMessageCommandHandler deleteMessageHandler,
         GetMessagesByRequestIdQueryHandler getMessagesHandler,
@@ -55,6 +60,8 @@ public sealed class RequestsController : ControllerBase
         _rejectHandler = rejectHandler;
         _deleteHandler = deleteHandler;
         _createValidator = createValidator;
+        _updateHandler = updateHandler;
+        _updateValidator = updateValidator;
         _createMessageHandler = createMessageHandler;
         _deleteMessageHandler = deleteMessageHandler;
         _getMessagesHandler = getMessagesHandler;
@@ -190,10 +197,15 @@ public sealed class RequestsController : ControllerBase
     public async Task<IActionResult> Approve(Guid id, CancellationToken ct)
     {
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role);
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var editorId))
             return Unauthorized();
 
-        var command = new ApproveRequestCommand { Id = id };
+        var command = new ApproveRequestCommand 
+        { 
+            Id = id,
+            CallerRole = roleClaim ?? "Editor"
+        };
         try
         {
             var result = await _approveHandler.HandleAsync(command, ct);
@@ -236,10 +248,12 @@ public sealed class RequestsController : ControllerBase
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var editorId))
             return Unauthorized();
 
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role);
         var command = new RejectRequestCommand 
         { 
             Id = id,
-            Reason = request.Reason ?? string.Empty
+            Reason = request.Reason ?? string.Empty,
+            CallerRole = roleClaim ?? "Editor"
         };
         try
         {
@@ -266,6 +280,63 @@ public sealed class RequestsController : ControllerBase
             }
             
             return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:guid}/update")]
+    [Authorize(Roles = "Viewer,Editor")]
+    [EnableRateLimiting("WritePolicy")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateRequestRequest request, CancellationToken ct)
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        if (!DateOnly.TryParse(request.EventDate, out var eventDate))
+            return BadRequest(new { success = false, message = "Invalid EventDate format." });
+        if (!TimeOnly.TryParse(request.EventTime, out var eventTime))
+            return BadRequest(new { success = false, message = "Invalid EventTime format." });
+        if (!Enum.IsDefined(typeof(NikahSalon.Domain.Enums.EventType), request.EventType))
+            return BadRequest(new { success = false, message = "Invalid EventType." });
+
+        var command = new UpdateRequestCommand
+        {
+            Id = id,
+            CallerUserId = userId,
+            CallerRole = roleClaim,
+            WeddingHallId = request.WeddingHallId,
+            Message = request.Message ?? string.Empty,
+            EventType = (NikahSalon.Domain.Enums.EventType)request.EventType,
+            EventName = request.EventName,
+            EventOwner = request.EventOwner,
+            EventDate = eventDate,
+            EventTime = eventTime
+        };
+
+        var validation = await _updateValidator.ValidateAsync(command, ct);
+        if (!validation.IsValid)
+            throw new FluentValidation.ValidationException(validation.Errors);
+
+        try
+        {
+            var updated = await _updateHandler.HandleAsync(command, ct);
+            if (updated is null) return NotFound();
+            return Ok(updated);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
         }
         catch (InvalidOperationException ex)
         {
@@ -316,13 +387,34 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Editor")]
+    [Authorize(Roles = "Editor,Viewer")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role);
+
+        // Viewer can delete only their own Pending requests
+        if (roleClaim == "Viewer")
+        {
+            if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized();
+
+            var req = await _getRequestByIdHandler.HandleAsync(new GetRequestByIdQuery { Id = id }, ct);
+            if (req is null) return NotFound(new { success = false, message = "Request not found." });
+
+            if (req.CreatedByUserId != userId)
+                return Forbid();
+
+            if (req.Status != NikahSalon.Domain.Enums.RequestStatus.Pending)
+                return BadRequest(new { success = false, message = "Sadece bekleyen talepler silinebilir." });
+        }
+
         var command = new DeleteRequestCommand { Id = id };
         var deleted = await _deleteHandler.HandleAsync(command, ct);
         
@@ -373,4 +465,15 @@ public sealed class CreateMessageRequest
 public sealed class RejectRequestRequest
 {
     public string? Reason { get; set; }
+}
+
+public sealed class UpdateRequestRequest
+{
+    public Guid WeddingHallId { get; set; }
+    public string? Message { get; set; }
+    public int EventType { get; set; }
+    public string EventName { get; set; } = string.Empty;
+    public string EventOwner { get; set; } = string.Empty;
+    public string EventDate { get; set; } = string.Empty;
+    public string EventTime { get; set; } = string.Empty;
 }

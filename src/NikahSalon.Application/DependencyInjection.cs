@@ -17,6 +17,7 @@ using NikahSalon.Application.Requests.DeleteRequest;
 using NikahSalon.Application.Requests.GetRequestById;
 using NikahSalon.Application.Requests.GetRequests;
 using NikahSalon.Application.Requests.RejectRequest;
+using NikahSalon.Application.Requests.UpdateRequest;
 using NikahSalon.Application.Schedules.CreateSchedule;
 using NikahSalon.Application.Schedules.DeleteSchedule;
 using NikahSalon.Application.Schedules.GetScheduleById;
@@ -57,6 +58,7 @@ public static class DependencyInjection
         services.AddScoped<ApproveRequestCommandHandler>();
         services.AddScoped<RejectRequestCommandHandler>();
         services.AddScoped<DeleteRequestCommandHandler>();
+        services.AddScoped<UpdateRequestCommandHandler>();
         services.AddScoped<CreateMessageCommandHandler>();
         services.AddScoped<GetMessagesByRequestIdQueryHandler>();
         services.AddScoped<DeleteMessageCommandHandler>();

@@ -1,36 +1,43 @@
 using NikahSalon.Application.DTOs;
 using NikahSalon.Application.Interfaces;
 using NikahSalon.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
 
 namespace NikahSalon.Application.Requests.RejectRequest;
 
 public sealed class RejectRequestCommandHandler
 {
     private readonly IRequestRepository _repository;
+    private readonly IScheduleRepository _scheduleRepo;
 
-    public RejectRequestCommandHandler(IRequestRepository repository)
+    public RejectRequestCommandHandler(
+        IRequestRepository repository,
+        IScheduleRepository scheduleRepo)
     {
         _repository = repository;
+        _scheduleRepo = scheduleRepo;
     }
 
     public async Task<RequestDto?> HandleAsync(RejectRequestCommand command, CancellationToken ct = default)
     {
         var entity = await _repository.GetByIdForUpdateAsync(command.Id, ct);
         if (entity is null) return null;
+
+        // ESKİ DAVRANIŞ: Sadece bekleyen talepler reddedilebilir
         if (entity.Status != RequestStatus.Pending)
             throw new InvalidOperationException("Sadece bekleyen talepler reddedilebilir.");
 
         entity.Status = RequestStatus.Rejected;
-        
+
         // Reddetme sebebini mesaj olarak ekle
         if (!string.IsNullOrWhiteSpace(command.Reason))
         {
             var reasonMessage = $"[REDDEDİLDİ] Sebep: {command.Reason}";
-            entity.Message = string.IsNullOrWhiteSpace(entity.Message) 
-                ? reasonMessage 
+            entity.Message = string.IsNullOrWhiteSpace(entity.Message)
+                ? reasonMessage
                 : $"{entity.Message}\n\n{reasonMessage}";
         }
-        
+
         await _repository.UpdateAsync(entity, ct);
 
         return new RequestDto

@@ -37,6 +37,8 @@ public sealed class ApproveRequestCommandHandler
     {
         var entity = await _requestRepo.GetByIdForUpdateAsync(command.Id, ct);
         if (entity is null) return null;
+
+        // ESKİ DAVRANIŞ: Sadece bekleyen talepler onaylanabilir
         if (entity.Status != RequestStatus.Pending)
             throw new InvalidOperationException("Sadece bekleyen talepler onaylanabilir.");
 
