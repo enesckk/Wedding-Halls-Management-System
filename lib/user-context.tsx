@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import type { User, UserRole } from "./types";
 import { login as apiLogin, getCurrentUser } from "./api/auth";
 import { getToken, TOKEN_KEY } from "./api/client";
-import { toUserFriendlyMessage } from "./utils/api-error";
+import { toUserFriendlyMessage, ApiError } from "./utils/api-error";
 import { toast } from "sonner";
 
 interface AuthContextType {
@@ -42,11 +42,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
     try {
       const userData = await getCurrentUser();
       setUser(userData);
-    } catch {
+    } catch (error) {
+      // 401 hatası normal - token geçersiz/yok, sessizce handle et
+      const isUnauthorized = 
+        error instanceof ApiError && error.status === 401;
+      
+      // Token'ı temizle (401 veya diğer hatalar için)
       if (typeof window !== "undefined") {
         sessionStorage.removeItem(TOKEN_KEY);
       }
       setUser(null);
+      
+      // 401 dışındaki hataları logla
+      if (!isUnauthorized) {
+        console.error("Error loading user:", error);
+      }
     } finally {
       setLoading(false);
     }

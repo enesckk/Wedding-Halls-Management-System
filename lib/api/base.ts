@@ -1,9 +1,5 @@
 import { ApiError } from "@/lib/utils/api-error";
 
-const getBaseUrl = (): string => {
-  return process.env.NEXT_PUBLIC_API_URL ?? "";
-};
-
 const TOKEN_KEY = "token";
 
 const getToken = (): string | null => {
@@ -56,11 +52,23 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
           errors = body.errors;
           if (!body?.message) message = body.errors.join(", ");
         } else if (text && !body?.message) message = text;
-        // Debug: Backend'den dönen hatayı console'a yazdır
-        console.error(`API Error [${res.status}]:`, { url, message, errors, body, text });
+        // 401 (Unauthorized) hatalarını sessizce handle et - token geçersiz/yok
+        if (res.status === 401) {
+          // Token'ı temizle
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem(TOKEN_KEY);
+          }
+          // 401 hatalarını console'a yazdırma (normal durum - token yoksa)
+        } else {
+          // Diğer hataları console'a yazdır
+          console.error(`API Error [${res.status}]:`, { url, message, errors, body, text });
+        }
       } catch {
         if (text) message = text;
-        console.error(`API Error [${res.status}]:`, { url, message, text });
+        // 401 hatalarını sessizce handle et
+        if (res.status !== 401) {
+          console.error(`API Error [${res.status}]:`, { url, message, text });
+        }
       }
       throw new ApiError(message, errors, res.status);
     }
