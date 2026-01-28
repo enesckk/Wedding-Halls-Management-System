@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getHalls } from "@/lib/api/halls";
 import { getSchedulesByHall } from "@/lib/api/schedules";
-import type { Schedule, WeddingHall } from "@/lib/types";
+import { getRequests } from "@/lib/api/requests";
+import type { Schedule, WeddingHall, Request } from "@/lib/types";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 import {
@@ -34,12 +35,13 @@ function formatDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-type ScheduleWithHall = Schedule & { hallName: string };
+type ScheduleWithHall = Schedule & { hallName: string; eventName?: string };
 
 export function CalendarView() {
   const router = useRouter();
   const [halls, setHalls] = useState<WeddingHall[]>([]);
   const [schedules, setSchedules] = useState<ScheduleWithHall[]>([]);
+  const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
@@ -50,6 +52,8 @@ export function CalendarView() {
     try {
       const h = await getHalls();
       setHalls(h ?? []);
+      
+      // Schedule'ları çek
       const all: ScheduleWithHall[] = [];
       for (const hall of h ?? []) {
         const list = await getSchedulesByHall(hall.id);
@@ -57,7 +61,45 @@ export function CalendarView() {
           all.push({ ...s, hallName: hall.name });
         }
       }
-      setSchedules(all);
+      
+      // Request'leri çek (onaylanmış olanlar)
+      const allRequests = await getRequests();
+      const answeredRequests = allRequests.filter(r => r.status === "Answered");
+      setRequests(answeredRequests);
+      
+      // Schedule'larla Request'leri eşleştir (eventName ekle)
+      const schedulesWithEvents = all.map(schedule => {
+        // Request'i bul: aynı salon, tarih ve saat
+        const matchingRequest = answeredRequests.find(req => {
+          // Tarih formatını normalize et (YYYY-MM-DD)
+          let reqDate = req.eventDate;
+          if (reqDate.includes('T')) {
+            reqDate = reqDate.split('T')[0];
+          }
+          const scheduleDate = schedule.date.split('T')[0]; // ISO date varsa sadece tarih kısmını al
+          
+          // Saat formatını normalize et (HH:mm)
+          let reqTime = req.eventTime;
+          if (reqTime.includes(':')) {
+            reqTime = reqTime.slice(0, 5); // HH:mm formatına çevir
+          }
+          let scheduleTime = schedule.startTime;
+          if (scheduleTime.includes(':')) {
+            scheduleTime = scheduleTime.slice(0, 5); // HH:mm formatına çevir
+          }
+          
+          return req.weddingHallId === schedule.weddingHallId &&
+                 reqDate === scheduleDate &&
+                 reqTime === scheduleTime;
+        });
+        
+        return {
+          ...schedule,
+          eventName: matchingRequest?.eventName
+        };
+      });
+      
+      setSchedules(schedulesWithEvents);
     } catch (e) {
       toast.error(toUserFriendlyMessage(e));
     } finally {
@@ -109,15 +151,18 @@ export function CalendarView() {
   }, [halls]);
 
   const getSlotStatus = useCallback(
-    (hallId: string, slotTime: string): "available" | "booked" => {
+    (hallId: string, slotTime: string): { status: "available" | "booked"; eventName?: string } => {
       if (!schedulesForDate || schedulesForDate.length === 0) {
-        return "available"; // Schedule yoksa varsayılan olarak müsait
+        return { status: "available" }; // Schedule yoksa varsayılan olarak müsait
       }
       const s = schedulesForDate.find(
         (x) => x.weddingHallId === hallId && x.startTime.slice(0, 5) === slotTime
       );
-      if (!s) return "available"; // Schedule yoksa varsayılan olarak müsait
-      return s.status === "Reserved" ? "booked" : "available";
+      if (!s) return { status: "available" }; // Schedule yoksa varsayılan olarak müsait
+      return {
+        status: s.status === "Reserved" ? "booked" : "available",
+        eventName: s.eventName
+      };
     },
     [schedulesForDate]
   );
@@ -429,28 +474,43 @@ export function CalendarView() {
                         </button>
                       </td>
                       {SLOTS.map((slot) => {
-                        const status = getSlotStatus(hall.id, slot);
+                        const slotInfo = getSlotStatus(hall.id, slot);
+                        const isBooked = slotInfo.status === "booked";
                         return (
-                          <td key={slot} className="p-1 text-center">
+                          <td key={slot} className="p-1 text-center align-top">
                             <button
                               type="button"
                               onClick={() =>
-                                status === "available" &&
+                                !isBooked &&
                                 router.push(`/dashboard/${hall.id}`)
                               }
                               className={cn(
-                                "mx-auto block h-8 w-full max-w-[60px] rounded-md transition-colors",
-                                status === "available" &&
+                                "mx-auto flex min-h-[48px] w-full max-w-[90px] items-center justify-center rounded-md px-1.5 py-1.5 text-[10px] font-medium leading-tight transition-colors",
+                                !isBooked &&
                                   "bg-green-100 hover:bg-green-200 cursor-pointer",
-                                status === "booked" &&
-                                  "bg-red-100 cursor-not-allowed"
+                                isBooked &&
+                                  "bg-red-100 cursor-not-allowed text-red-800 hover:bg-red-200"
                               )}
                               title={
-                                status === "available"
+                                !isBooked
                                   ? "Müsait — Detay için tıklayın"
-                                  : "Dolu"
+                                  : slotInfo.eventName 
+                                    ? `${slotInfo.eventName} - Dolu`
+                                    : "Dolu"
                               }
-                            />
+                            >
+                              {isBooked && slotInfo.eventName ? (
+                                <span className="line-clamp-2 break-words text-center">
+                                  {slotInfo.eventName.length > 15
+                                    ? slotInfo.eventName.substring(0, 13) + "..."
+                                    : slotInfo.eventName}
+                                </span>
+                              ) : isBooked ? (
+                                <span className="text-[9px] opacity-70">Dolu</span>
+                              ) : (
+                                <span className="text-[8px] text-green-700 opacity-50">Müsait</span>
+                              )}
+                            </button>
                           </td>
                         );
                       })}

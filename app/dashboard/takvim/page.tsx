@@ -229,32 +229,6 @@ export default function TakvimPage() {
     };
   }, [hourlyAvailability, halls]);
 
-  // Genel istatistikler (tüm schedule'lar için)
-  const overallStats = useMemo(() => {
-    if (!schedules || schedules.length === 0) {
-      return {
-        available: 0,
-        reserved: 0,
-        total: 0,
-        occupancyRate: 0,
-        availabilityRate: 0,
-      };
-    }
-    const available = schedules.filter((s) => s.status === "Available").length;
-    const reserved = schedules.filter((s) => s.status === "Reserved").length;
-    const total = schedules.length;
-    const occupancyRate = total > 0 ? Math.round((reserved / total) * 100) : 0;
-    const availabilityRate = total > 0 ? Math.round((available / total) * 100) : 0;
-    
-    return {
-      available,
-      reserved,
-      total,
-      occupancyRate,
-      availabilityRate,
-    };
-  }, [schedules]);
-
   const days = getDaysInMonth(currentDate);
 
   const getEventsForDate = (d: Date) => {
@@ -290,50 +264,6 @@ export default function TakvimPage() {
           Yenile
         </Button>
       </div>
-
-      {/* Genel Doluluk İstatistikleri */}
-      {overallStats.total > 0 && (
-        <div className="grid gap-4 sm:grid-cols-4">
-          <Card className="border-border bg-card">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="mb-1 text-2xl font-bold text-primary">
-                  %{overallStats.occupancyRate}
-                </div>
-                <p className="text-xs text-muted-foreground">Genel Doluluk Oranı</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border bg-card">
-            <CardContent className="p-4">
-              <div className="text-center">
-                <div className="mb-1 text-2xl font-bold text-primary">
-                  {overallStats.total}
-                </div>
-                <p className="text-xs text-muted-foreground">Toplam Slot</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="p-4 text-center">
-              <CheckCircle2 className="mx-auto mb-1 h-5 w-5 text-green-600" />
-              <div className="text-xl font-bold text-green-700">
-                {overallStats.available}
-              </div>
-              <p className="text-xs text-green-600">Müsait</p>
-            </CardContent>
-          </Card>
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="p-4 text-center">
-              <XCircle className="mx-auto mb-1 h-5 w-5 text-red-600" />
-              <div className="text-xl font-bold text-red-700">
-                {overallStats.reserved}
-              </div>
-              <p className="text-xs text-red-600">Dolu</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-12">
         <div className="lg:col-span-5">

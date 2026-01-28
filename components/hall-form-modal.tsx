@@ -93,11 +93,54 @@ export function HallFormModal({
       return;
     }
 
+    // Görseli optimize et (sıkıştır ve boyutlandır)
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64String = reader.result as string;
-      setForm((p) => ({ ...p, imageUrl: base64String }));
-      setImagePreview(base64String);
+      const img = new Image();
+      img.onload = () => {
+        // Canvas ile görseli optimize et
+        const canvas = document.createElement("canvas");
+        const MAX_WIDTH = 1920; // Maksimum genişlik
+        const MAX_HEIGHT = 1080; // Maksimum yükseklik
+        let width = img.width;
+        let height = img.height;
+
+        // Boyutları orantılı olarak küçült
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = (height * MAX_WIDTH) / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = (width * MAX_HEIGHT) / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          // JPEG olarak sıkıştır (kalite: 0.85)
+          const base64String = canvas.toDataURL("image/jpeg", 0.85);
+          setForm((p) => ({ ...p, imageUrl: base64String }));
+          setImagePreview(base64String);
+        } else {
+          // Canvas desteklenmiyorsa direkt kullan
+          const base64String = reader.result as string;
+          setForm((p) => ({ ...p, imageUrl: base64String }));
+          setImagePreview(base64String);
+        }
+      };
+      img.onerror = () => {
+        // Hata durumunda direkt kullan
+        const base64String = reader.result as string;
+        setForm((p) => ({ ...p, imageUrl: base64String }));
+        setImagePreview(base64String);
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
   };
