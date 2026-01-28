@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentValidation;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using NikahSalon.API.Models;
 
 namespace NikahSalon.API.Middleware;
@@ -9,11 +11,13 @@ public sealed class ExceptionHandlingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+    private readonly IWebHostEnvironment _environment;
 
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger, IWebHostEnvironment environment)
     {
         _next = next;
         _logger = logger;
+        _environment = environment;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -29,7 +33,7 @@ public sealed class ExceptionHandlingMiddleware
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception ex)
+    private async Task HandleExceptionAsync(HttpContext context, Exception ex)
     {
         HttpStatusCode statusCode;
         string message;
@@ -59,9 +63,29 @@ public sealed class ExceptionHandlingMiddleware
                 break;
             default:
                 statusCode = HttpStatusCode.InternalServerError;
-                message = "An unexpected error occurred.";
-                errors = Array.Empty<string>();
+                // Development ortamında gerçek exception mesajını göster
+                if (_environment.IsDevelopment())
+                {
+                    message = $"An unexpected error occurred: {ex.Message}";
+                    var errorList = new List<string> { ex.Message };
+                    if (ex.InnerException != null)
+                    {
+                        errorList.Add($"Inner exception: {ex.InnerException.Message}");
+                    }
+                    errors = errorList;
+                }
+                else
+                {
+                    message = "An unexpected error occurred.";
+                    errors = Array.Empty<string>();
+                }
                 break;
+        }
+
+        // Response zaten yazılmışsa tekrar yazma
+        if (context.Response.HasStarted)
+        {
+            return;
         }
 
         context.Response.ContentType = "application/json";
@@ -74,7 +98,14 @@ public sealed class ExceptionHandlingMiddleware
             Errors = errors
         };
 
-        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-        await context.Response.WriteAsync(json);
+        try
+        {
+            var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            await context.Response.WriteAsync(json);
+        }
+        catch (Exception writeEx)
+        {
+            _logger.LogError(writeEx, "Failed to write error response");
+        }
     }
 }

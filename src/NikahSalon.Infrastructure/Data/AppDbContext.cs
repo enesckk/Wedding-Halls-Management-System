@@ -26,7 +26,8 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.Address).HasMaxLength(500).IsRequired();
             e.Property(x => x.Description).HasMaxLength(2000).IsRequired();
-            e.Property(x => x.ImageUrl).HasMaxLength(1000);
+            // ImageUrl için TEXT tipi kullanılıyor (base64 görseller çok uzun olabilir, sınırsız uzunluk)
+            e.Property(x => x.ImageUrl).HasColumnType("TEXT");
             e.Property(x => x.TechnicalDetails).HasMaxLength(5000);
         });
 
