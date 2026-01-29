@@ -272,8 +272,13 @@ export default function HallDetailPage() {
           return;
         }
       }
+      // Kendine ait olmayan rezervasyonda sadece detay (takvim sayfasındaki gibi): düzenleme/silme yok
+      if (schedule && schedule.status === "Reserved" && !isSuperAdmin && user?.id && schedule.createdByUserId && schedule.createdByUserId !== user.id) {
+        setDetailDialogOpen(true);
+        return;
+      }
       
-      // Editor/SuperAdmin için düzenleme dialog'u aç
+      // Editor/SuperAdmin için düzenleme dialog'u aç (veya kendi rezervasyonu)
       if (schedule) {
         // Mevcut schedule varsa bilgilerini yükle
         setScheduleStatus(schedule.status);
@@ -297,7 +302,7 @@ export default function HallDetailPage() {
       // Viewer için dolu schedule'larda detay dialog'u aç
       setDetailDialogOpen(true);
     }
-  }, [canEditSchedules, hall, isSuperAdmin, editorDepartment, canAccessHallCenter]);
+  }, [canEditSchedules, hall, isSuperAdmin, editorDepartment, canAccessHallCenter, user?.id]);
 
   // Dialog açıldığında ve "Dolu" seçildiğinde Editor için department'ı otomatik ayarla
   useEffect(() => {
@@ -930,7 +935,8 @@ export default function HallDetailPage() {
             </div>
           )}
           <DialogFooter className="flex flex-col sm:flex-row gap-2">
-            {canEditSchedules && selectedSchedule && (
+            {/* Düzenle / Sil sadece kendi rezervasyonunda veya SuperAdmin (takvim sayfasındaki gibi) */}
+            {canEditSchedules && selectedSchedule && (isSuperAdmin || selectedSchedule.createdByUserId === user?.id) && (
               <>
                 <Button
                   variant="outline"
@@ -1082,7 +1088,8 @@ export default function HallDetailPage() {
                       <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200">
                         Dolu
                       </Badge>
-                      {canEditSchedules && (
+                      {/* Düzenle/Sil sadece kendi rezervasyonunda veya SuperAdmin (takvim gibi) */}
+                      {canEditSchedules && (isSuperAdmin || reservation.createdByUserId === user?.id) && (
                         <>
                           <Button
                             variant="outline"

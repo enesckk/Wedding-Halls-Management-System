@@ -68,6 +68,23 @@ function formatTechnicalDetails(selected: Set<string>): string {
   return labels.join(", ");
 }
 
+function getDepartmentName(department?: number): string {
+  switch (department) {
+    case 0:
+      return "Nikah";
+    case 1:
+      return "Nişan";
+    case 2:
+      return "Konser";
+    case 3:
+      return "Toplantı";
+    case 4:
+      return "Özel";
+    default:
+      return "Belirtilmemiş";
+  }
+}
+
 type Mode = "create" | "update";
 
 interface CenterFormModalProps {
@@ -473,7 +490,7 @@ export function CenterFormModal({
                           htmlFor={`center-editor-${editor.id}`}
                           className="text-sm font-medium leading-none cursor-pointer flex-1"
                         >
-                          {editor.name} ({editor.email})
+                          {editor.name} ({editor.email}) - {getDepartmentName(editor.department)}
                         </label>
                       </div>
                     ))

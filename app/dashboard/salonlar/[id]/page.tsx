@@ -82,19 +82,48 @@ export default function CenterDetailPage() {
       const centerHalls = allHalls.filter((h) => h.centerId === centerId);
       setHalls(centerHalls);
 
-      // Merkezdeki tüm salonların schedule'larını topla (istatistik için)
+      // Müsaitlik özeti: önümüzdeki 7 gün × günlük 6 saat slot (09:00, 10:30, 12:00, 14:00, 15:30, 17:00) × merkezdeki salon sayısı
+      const SLOTS_PER_DAY = ["09:00", "10:30", "12:00", "14:00", "15:30", "17:00"];
+      const DAYS_AHEAD = 7;
+      const toDateStr = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+      // API'den gelen saati HH:mm formatına çevir (09:00:00 veya 9:00 → 09:00)
+      const normalizeSlot = (t: string) => {
+        const part = (t || "").trim().slice(0, 8);
+        const [h, m] = part.split(/[:\s]/).map((x) => parseInt(x, 10) || 0);
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      };
       let totalSlots = 0;
       let availableSlots = 0;
       let reservedSlots = 0;
       if (centerHalls.length > 0) {
-        const allSchedules = await Promise.all(
+        const allSchedulesByHall = await Promise.all(
           centerHalls.map((h) => getSchedulesByHall(h.id).catch(() => []))
         );
-        for (const list of allSchedules) {
+        const scheduleMap = new Map<string, { status: string }>();
+        centerHalls.forEach((hall, i) => {
+          const list = allSchedulesByHall[i] ?? [];
           for (const s of list) {
-            totalSlots++;
-            if (s.status === "Available") availableSlots++;
-            else reservedSlots++;
+            const dateNorm = s.date.includes("T") ? s.date.split("T")[0] : s.date;
+            const startNorm = normalizeSlot(s.startTime);
+            scheduleMap.set(`${hall.id}|${dateNorm}|${startNorm}`, { status: s.status });
+          }
+        });
+        for (let d = 0; d < DAYS_AHEAD; d++) {
+          const date = new Date();
+          date.setDate(date.getDate() + d);
+          const dateStr = toDateStr(date);
+          for (const hall of centerHalls) {
+            for (const slot of SLOTS_PER_DAY) {
+              totalSlots++;
+              const entry = scheduleMap.get(`${hall.id}|${dateStr}|${slot}`);
+              if (entry?.status === "Reserved") reservedSlots++;
+              else availableSlots++;
+            }
           }
         }
       }
@@ -261,9 +290,12 @@ export default function CenterDetailPage() {
           </div>
         </div>
 
-        {/* Müsaitlik / saat istatistikleri */}
+        {/* Müsaitlik / saat istatistikleri: önümüzdeki 7 gün, günlük 6 slot, merkezdeki tüm salonlar */}
         <div className="rounded-lg border border-border p-4 bg-muted/30">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Müsaitlik Özeti</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-1">Müsaitlik Özeti</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Önümüzdeki 7 gün, günlük 6 saat slotu (09:00, 10:30, 12:00, 14:00, 15:30, 17:00) ve merkezdeki tüm salonlar üzerinden hesaplanır.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/50 p-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
