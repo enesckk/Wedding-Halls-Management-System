@@ -17,7 +17,7 @@ import { getRequests } from "@/lib/api/requests";
 import type { MessageDto } from "@/lib/api/messages";
 import type { Request } from "@/lib/types";
 import { sanitizeText } from "@/lib/utils/sanitize";
-import { isEditor as isEditorRole, isViewer as isViewerRole } from "@/lib/utils/role";
+import { canEdit, isViewer as isViewerRole } from "@/lib/utils/role";
 
 type Notification = {
   id: string;
@@ -48,35 +48,37 @@ function formatNotificationDate(date: Date): string {
   });
 }
 
-const STORAGE_KEY = "notification-read-ids";
+function getStorageKey(userId: string): string {
+  return `notification-read-ids-${userId}`;
+}
 
-function getReadNotificationIds(): Set<string> {
-  if (typeof window === "undefined") return new Set();
+function getReadNotificationIds(userId: string): Set<string> {
+  if (typeof window === "undefined" || !userId) return new Set();
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(getStorageKey(userId));
     return stored ? new Set(JSON.parse(stored)) : new Set();
   } catch {
     return new Set();
   }
 }
 
-function markNotificationAsRead(id: string) {
-  if (typeof window === "undefined") return;
+function markNotificationAsRead(id: string, userId: string) {
+  if (typeof window === "undefined" || !userId) return;
   try {
-    const readIds = getReadNotificationIds();
+    const readIds = getReadNotificationIds(userId);
     readIds.add(id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(readIds)));
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(Array.from(readIds)));
   } catch {
     // Ignore storage errors
   }
 }
 
-function markAllNotificationsAsRead(ids: string[]) {
-  if (typeof window === "undefined") return;
+function markAllNotificationsAsRead(ids: string[], userId: string) {
+  if (typeof window === "undefined" || !userId) return;
   try {
-    const readIds = getReadNotificationIds();
+    const readIds = getReadNotificationIds(userId);
     ids.forEach((id) => readIds.add(id));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(readIds)));
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(Array.from(readIds)));
   } catch {
     // Ignore storage errors
   }
@@ -93,25 +95,38 @@ export function NotificationBell() {
     if (!user) return;
     
     const loadNotifications = async () => {
+      if (!user?.id) return;
       try {
         setLoading(true);
-        const readIds = getReadNotificationIds();
+        const readIds = getReadNotificationIds(user.id);
         const allNotifications: Notification[] = [];
 
         // Taleplerden bildirimleri al
         try {
           const requests = await getRequests();
-          const isEditor = isEditorRole(user.role);
+          const isEditor = canEdit(user.role);
           const isViewer = isViewerRole(user.role);
           
           if (isEditor) {
-            // Editor için: Sadece yeni bekleyen talepler (kendi talebi olmayan)
+            // Editor için: Sadece kendi departmanına ait yeni bekleyen talepler (kendi talebi olmayan)
             // Son 24 saat içinde oluşturulmuş bekleyen talepler
             const newPendingRequests = requests.filter((req) => {
               const reqDate = new Date(req.createdAt);
               const hoursDiff = (Date.now() - reqDate.getTime()) / (1000 * 60 * 60);
-              // Son 24 saat içinde ve bekleyen durumda
-              return req.status === "Pending" && hoursDiff <= 24 && req.createdByUserId !== user.id;
+              
+              // Kendi talebi değil ve bekleyen durumda
+              if (req.status !== "Pending" || hoursDiff > 24 || req.createdByUserId === user.id) {
+                return false;
+              }
+              
+              // Editor'ın departmanı varsa, sadece o departmana ait talepleri göster
+              // eventType: 0=Nikah, 1=Nişan, 2=Konser, 3=Toplantı, 4=Özel
+              if (user.department !== undefined && user.department !== null) {
+                return req.eventType === user.department;
+              }
+              
+              // Departman bilgisi yoksa tüm talepleri göster (geriye dönük uyumluluk)
+              return true;
             });
             
             // En yeni taleplerden bildirim oluştur
@@ -228,14 +243,16 @@ export function NotificationBell() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleMarkAllAsRead = () => {
+    if (!user?.id) return;
     const allIds = notifications.map((n) => n.id);
-    markAllNotificationsAsRead(allIds);
+    markAllNotificationsAsRead(allIds, user.id);
     // Okundu bildirimleri listeden kaldır
     setNotifications([]);
   };
 
   const handleNotificationClick = (notification: Notification) => {
-    markNotificationAsRead(notification.id);
+    if (!user?.id) return;
+    markNotificationAsRead(notification.id, user.id);
     // Okundu bildirimi listeden kaldır
     setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
     

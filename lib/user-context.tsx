@@ -23,6 +23,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,6 +42,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
     try {
       const userData = await getCurrentUser();
+      console.log("👤 Current User Data:", userData);
       setUser(userData);
     } catch (error) {
       // 401 hatası normal - token geçersiz/yok, sessizce handle et
@@ -97,9 +99,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
     router.push("/");
   }, [router]);
 
+  const refreshUser = useCallback(async () => {
+    await loadUser();
+  }, [loadUser]);
+
   const role = user?.role ?? null;
   const isAuthenticated = user !== null;
-  const isEditor = role === "Editor";
+  // SuperAdmin and Editor can edit (Editor = limited admin, SuperAdmin = full admin)
+  const isEditor = role === "Editor" || role === "SuperAdmin";
 
   return (
     <AuthContext.Provider
@@ -111,6 +118,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         logout,
+        refreshUser,
       }}
     >
       {children}

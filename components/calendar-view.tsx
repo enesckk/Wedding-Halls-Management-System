@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { getHalls } from "@/lib/api/halls";
+import { getCenters } from "@/lib/api/centers";
 import { getSchedulesByHall } from "@/lib/api/schedules";
 import { getRequests } from "@/lib/api/requests";
 import type { Schedule, WeddingHall, Request } from "@/lib/types";
+import type { Center } from "@/lib/api/centers";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 import {
@@ -29,8 +31,17 @@ import {
   Users,
   MapPin,
   RefreshCw,
+  Building2,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const SLOTS = ["09:00", "10:30", "12:00", "14:00", "15:30", "17:00"];
 const daysOfWeek = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
@@ -58,71 +69,102 @@ export function CalendarView() {
   const router = useRouter();
   const { user } = useUser();
   const [halls, setHalls] = useState<WeddingHall[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
+  const [selectedCenterId, setSelectedCenterId] = useState<string>("all");
   const [schedules, setSchedules] = useState<ScheduleWithHall[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [viewMode, setViewMode] = useState<"week" | "day">("week");
+  const [viewMode, setViewMode] = useState<"week" | "day">("day");
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<ScheduleWithHall | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const h = await getHalls();
+      const [h, centersData, requests] = await Promise.all([
+        getHalls(),
+        getCenters().catch(() => []),
+        getRequests().catch(() => []), // Request'ler yüklenemezse boş array döndür
+      ]);
       setHalls(h ?? []);
+      setCenters(centersData ?? []);
+      
+      // Request'leri çek (sadece Answered olanlar)
+      const answeredRequests = requests.filter((r: Request) => r.status === "Answered");
       
       // Schedule'ları çek
       const all: ScheduleWithHall[] = [];
       for (const hall of h ?? []) {
         const list = await getSchedulesByHall(hall.id);
         for (const s of list ?? []) {
-          all.push({ ...s, hallName: hall.name });
+          // Dolu schedule'lar için Request bilgilerini ekle
+          if (s.status === "Reserved") {
+            // Schedule'ın kendisinde eventName varsa direkt kullan
+            if (s.eventName) {
+              all.push({
+                ...s,
+                hallName: hall.name,
+                eventName: s.eventName,
+                eventOwner: s.eventOwner,
+                eventType: s.eventType,
+              });
+            } else {
+              // Schedule'da eventName yoksa Request'ten eşleştir
+              // Tarih ve saat formatını normalize et
+              let reqDate = s.date;
+              if (reqDate.includes('T')) {
+                reqDate = reqDate.split('T')[0];
+              }
+              
+              // Saat formatını normalize et
+              let scheduleTime = s.startTime;
+              if (scheduleTime.includes(':')) {
+                scheduleTime = scheduleTime.slice(0, 5); // HH:mm
+              }
+              
+              // Eşleşen Request'i bul
+              const matchingRequest = answeredRequests.find((req: Request) => {
+                let reqEventDate = req.eventDate;
+                if (reqEventDate.includes('T')) {
+                  reqEventDate = reqEventDate.split('T')[0];
+                }
+                
+                // Saat formatını normalize et
+                let reqTime = req.eventTime;
+                if (reqTime.includes(':')) {
+                  reqTime = reqTime.slice(0, 5); // HH:mm
+                }
+                
+                return req.weddingHallId === s.weddingHallId &&
+                       reqEventDate === reqDate &&
+                       reqTime === scheduleTime;
+              });
+              
+              if (matchingRequest) {
+                all.push({
+                  ...s,
+                  hallName: hall.name,
+                  eventName: matchingRequest.eventName,
+                  eventOwner: matchingRequest.eventOwner,
+                  eventType: matchingRequest.eventType,
+                  requestId: matchingRequest.id,
+                });
+              } else {
+                // Request eşleşmesi yoksa schedule'ı olduğu gibi ekle
+                all.push({ ...s, hallName: hall.name });
+              }
+            }
+          } else {
+            // Müsait schedule'lar için sadece hallName ekle
+            all.push({ ...s, hallName: hall.name });
+          }
         }
       }
       
-      // Request'leri çek (onaylanmış olanlar)
-      const allRequests = await getRequests();
-      const answeredRequests = allRequests.filter(r => r.status === "Answered");
+      setSchedules(all);
       setRequests(answeredRequests);
-      
-      // Schedule'larla Request'leri eşleştir (eventName ekle)
-      const schedulesWithEvents = all.map(schedule => {
-        // Request'i bul: aynı salon, tarih ve saat
-        const matchingRequest = answeredRequests.find(req => {
-          // Tarih formatını normalize et (YYYY-MM-DD)
-          let reqDate = req.eventDate;
-          if (reqDate.includes('T')) {
-            reqDate = reqDate.split('T')[0];
-          }
-          const scheduleDate = schedule.date.split('T')[0]; // ISO date varsa sadece tarih kısmını al
-          
-          // Saat formatını normalize et (HH:mm)
-          let reqTime = req.eventTime;
-          if (reqTime.includes(':')) {
-            reqTime = reqTime.slice(0, 5); // HH:mm formatına çevir
-          }
-          let scheduleTime = schedule.startTime;
-          if (scheduleTime.includes(':')) {
-            scheduleTime = scheduleTime.slice(0, 5); // HH:mm formatına çevir
-          }
-          
-          return req.weddingHallId === schedule.weddingHallId &&
-                 reqDate === scheduleDate &&
-                 reqTime === scheduleTime;
-        });
-        
-        return {
-          ...schedule,
-          eventName: matchingRequest?.eventName,
-          eventOwner: matchingRequest?.eventOwner,
-          eventType: matchingRequest?.eventType,
-          requestId: matchingRequest?.id,
-        };
-      });
-      
-      setSchedules(schedulesWithEvents);
     } catch (e) {
       toast.error(toUserFriendlyMessage(e));
     } finally {
@@ -134,12 +176,58 @@ export function CalendarView() {
     refresh();
   }, [refresh]);
 
+  // Filtrelenmiş salonlar (merkeze göre)
+  const filteredHalls = useMemo(() => {
+    if (selectedCenterId === "all") return halls;
+    return halls.filter((h) => h.centerId === selectedCenterId);
+  }, [halls, selectedCenterId]);
+
+  // Merkeze göre gruplanmış salonlar
+  const hallsByCenter = useMemo(() => {
+    if (selectedCenterId !== "all") {
+      // Belirli bir merkez seçiliyse, sadece o merkezin salonlarını göster
+      const center = centers.find((c) => c.id === selectedCenterId);
+      if (!center) return [];
+      return [{
+        center,
+        halls: filteredHalls,
+      }];
+    }
+    // Tüm merkezler için grupla
+    return centers.map((center) => ({
+      center,
+      halls: halls.filter((h) => h.centerId === center.id),
+    })).filter((g) => g.halls.length > 0);
+  }, [centers, halls, filteredHalls, selectedCenterId]);
+
   const todayStr = useMemo(() => formatDateString(new Date()), []);
   const selectedStr = selectedDate ? formatDateString(selectedDate) : null;
 
+  // Haftalık görünüm için günleri oluştur (seçilen tarihten itibaren 7 gün)
+  const weekDays = useMemo(() => {
+    if (!selectedDate) return [];
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(selectedDate);
+      date.setDate(date.getDate() + i);
+      return {
+        date: formatDateString(date),
+        displayDate: date.getDate(),
+        dayOfWeek: (date.getDay() + 6) % 7, // Pazartesi = 0
+        isToday: formatDateString(date) === todayStr,
+      };
+    });
+  }, [selectedDate, todayStr]);
+
   const schedulesForDate = useMemo(() => {
     if (!selectedStr) return [];
-    return schedules.filter((s) => s.date === selectedStr);
+    return schedules.filter((s) => {
+      // Tarih formatını normalize et
+      let sDate = s.date;
+      if (sDate.includes('T')) {
+        sDate = sDate.split('T')[0];
+      }
+      return sDate === selectedStr;
+    });
   }, [schedules, selectedStr]);
 
   const schedulesToday = useMemo(() => {
@@ -149,7 +237,7 @@ export function CalendarView() {
       if (sDate.includes('T')) {
         sDate = sDate.split('T')[0];
       }
-      return sDate === todayStr;
+      return sDate === todayStr && s.status === "Reserved";
     });
   }, [schedules, todayStr]);
 
@@ -174,28 +262,75 @@ export function CalendarView() {
     return Math.max(0, totalSlots - reservedCount);
   }, [halls, schedulesToday]);
 
-  // Toplam kapasite (güvenli hesaplama)
+  // Toplam kapasite (filtrelenmiş salonlar için)
   const totalCapacity = useMemo(() => {
-    if (!halls || halls.length === 0) return 0;
-    return halls.reduce((acc, h) => acc + (h.capacity || 0), 0);
-  }, [halls]);
+    if (!filteredHalls || filteredHalls.length === 0) return 0;
+    return filteredHalls.reduce((acc, h) => acc + (h.capacity || 0), 0);
+  }, [filteredHalls]);
 
   const getSlotStatus = useCallback(
-    (hallId: string, slotTime: string): { status: "available" | "booked"; eventName?: string } => {
-      if (!schedulesForDate || schedulesForDate.length === 0) {
+    (hallId: string, slotTime: string, dateStr?: string): { status: "available" | "booked"; eventName?: string } => {
+      // Hafta görünümü için tarih parametresi kullan
+      const targetDate = dateStr || selectedStr;
+      if (!targetDate) {
+        return { status: "available" };
+      }
+      
+      // Tarih formatını normalize et
+      const schedulesForTargetDate = schedules.filter((s) => {
+        let sDate = s.date;
+        if (sDate.includes('T')) {
+          sDate = sDate.split('T')[0];
+        }
+        return sDate === targetDate;
+      });
+      
+      if (!schedulesForTargetDate || schedulesForTargetDate.length === 0) {
         return { status: "available" }; // Schedule yoksa varsayılan olarak müsait
       }
-      const s = schedulesForDate.find(
-        (x) => x.weddingHallId === hallId && x.startTime.slice(0, 5) === slotTime
+      
+      const s = schedulesForTargetDate.find(
+        (x) => {
+          // Saat formatını normalize et
+          let sTime = x.startTime;
+          if (sTime.includes(':')) {
+            sTime = sTime.slice(0, 5); // HH:mm
+          }
+          return x.weddingHallId === hallId && sTime === slotTime;
+        }
       );
       if (!s) return { status: "available" }; // Schedule yoksa varsayılan olarak müsait
+      const scheduleWithHall = s as ScheduleWithHall;
       return {
         status: s.status === "Reserved" ? "booked" : "available",
-        eventName: s.eventName
+        eventName: scheduleWithHall.eventName || s.eventName
       };
     },
-    [schedulesForDate]
+    [schedules, selectedStr]
   );
+
+  // Her merkez için doluluk istatistikleri
+  const centerStats = useMemo(() => {
+    return hallsByCenter.map(({ center, halls: centerHalls }) => {
+      const centerHallIds = centerHalls.map((h) => h.id);
+      const centerSchedules = schedulesToday.filter((s) =>
+        centerHallIds.includes(s.weddingHallId)
+      );
+      const totalSlots = centerHalls.length * SLOTS.length;
+      const reservedSlots = centerSchedules.filter((s) => s.status === "Reserved").length;
+      const availableSlots = totalSlots - reservedSlots;
+      const occupancyPercent = totalSlots > 0 ? Math.round((reservedSlots / totalSlots) * 100) : 0;
+      
+      return {
+        center,
+        totalSlots,
+        reservedSlots,
+        availableSlots,
+        occupancyPercent,
+        halls: centerHalls,
+      };
+    });
+  }, [hallsByCenter, schedulesToday]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -251,13 +386,16 @@ export function CalendarView() {
     () => {
       if (!schedulesToday || schedulesToday.length === 0) return [];
       return schedulesToday
-        .filter((s) => s.status === "Reserved")
-        .map((s) => ({
-          ...s,
-          eventName: (s as ScheduleWithHall).eventName || "Etkinlik Adı Yok",
-          eventOwner: (s as ScheduleWithHall).eventOwner || "Bilinmiyor",
-          eventType: (s as ScheduleWithHall).eventType,
-        }))
+        .map((s) => {
+          const scheduleWithHall = s as ScheduleWithHall;
+          return {
+            ...s,
+            eventName: scheduleWithHall.eventName,
+            eventOwner: scheduleWithHall.eventOwner,
+            eventType: scheduleWithHall.eventType,
+          };
+        })
+        .filter((s) => s.eventName) // Sadece eventName'i olanları göster
         .sort((a, b) => a.startTime.localeCompare(b.startTime))
         .slice(0, 5);
     },
@@ -296,13 +434,13 @@ export function CalendarView() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div />
+    <div className="space-y-4 sm:space-y-6 w-full">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between w-full">
+        <div className="flex-1" />
         <Button
           variant="outline"
           size="sm"
-          className="gap-2 self-start sm:self-center"
+          className="gap-2 self-start sm:self-center shrink-0"
           onClick={() => refresh()}
           disabled={loading}
         >
@@ -312,18 +450,18 @@ export function CalendarView() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                <CalendarIcon className="h-6 w-6 text-primary" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                <CalendarIcon className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-foreground">
                   {todayReserved ?? 0}
                 </p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
                   Bugünkü Rezervasyon
                 </p>
               </div>
@@ -332,57 +470,128 @@ export function CalendarView() {
         </Card>
 
         <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-500/10">
-                <CalendarIcon className="h-6 w-6 text-green-600" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-green-500/10 shrink-0">
+                <CalendarIcon className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-foreground">
                   {todayAvailable ?? 0}
                 </p>
-                <p className="text-sm text-muted-foreground">Müsait Saat</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Müsait Saat</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
-                <Users className="h-6 w-6 text-primary" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-secondary shrink-0">
+                <Users className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-foreground">
                   {totalCapacity ?? 0}
                 </p>
-                <p className="text-sm text-muted-foreground">Toplam Kapasite</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Toplam Kapasite</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10">
-                <MapPin className="h-6 w-6 text-accent" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl bg-accent/10 shrink-0">
+                <MapPin className="h-5 w-5 sm:h-6 sm:w-6 text-accent" />
               </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {halls?.length ?? 0}
+              <div className="min-w-0">
+                <p className="text-xl sm:text-2xl font-bold text-foreground">
+                  {filteredHalls?.length ?? 0}
                 </p>
-                <p className="text-sm text-muted-foreground">Aktif Salon</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Aktif Salon</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Mini Calendar */}
+      {/* Merkez Filtresi */}
+      {centers.length > 0 && (
         <Card className="border-border bg-card">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              <Filter className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <Label htmlFor="center-filter" className="text-xs sm:text-sm font-medium text-muted-foreground mb-1 block">
+                  Merkez Filtresi
+                </Label>
+                <Select value={selectedCenterId} onValueChange={setSelectedCenterId}>
+                  <SelectTrigger id="center-filter" className="w-full">
+                    <SelectValue placeholder="Tüm merkezler" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tüm Merkezler</SelectItem>
+                    {centers.map((center) => (
+                      <SelectItem key={center.id} value={center.id}>
+                        {center.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Merkez Doluluk İstatistikleri */}
+      {selectedCenterId === "all" && centerStats.length > 0 && (
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {centerStats.map((stat) => (
+            <Card key={stat.center.id} className="border-border bg-card">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
+                    <h3 className="text-sm sm:text-base font-semibold text-foreground truncate" title={stat.center.name}>
+                      {stat.center.name}
+                    </h3>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg border border-border/50 bg-background/50 p-2">
+                    <div className="text-lg sm:text-xl font-bold text-green-600">{stat.availableSlots}</div>
+                    <div className="text-[10px] sm:text-xs text-muted-foreground">Müsait</div>
+                  </div>
+                  <div className="rounded-lg border border-border/50 bg-background/50 p-2">
+                    <div className="text-lg sm:text-xl font-bold text-red-600">{stat.reservedSlots}</div>
+                    <div className="text-[10px] sm:text-xs text-muted-foreground">Dolu</div>
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-border">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Doluluk:</span>
+                    <span className="font-semibold text-foreground">%{stat.occupancyPercent}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${stat.occupancyPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-3 w-full">
+        {/* Mini Calendar */}
+        <Card className="border-border bg-card w-full">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold text-foreground">
@@ -472,9 +681,13 @@ export function CalendarView() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold text-foreground">
-                {selectedDate
-                  ? `${selectedDate.getDate()} ${monthNames[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
-                  : "Tarih Seçin"}
+                {viewMode === "week" && selectedDate ? (
+                  `Hafta Görünümü - ${selectedDate.getDate()} ${monthNames[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
+                ) : selectedDate ? (
+                  `${selectedDate.getDate()} ${monthNames[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
+                ) : (
+                  "Tarih Seçin"
+                )}
               </CardTitle>
               <div className="flex gap-2">
                 <Button
@@ -495,82 +708,296 @@ export function CalendarView() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[500px]">
-                <thead>
-                  <tr>
-                    <th className="p-2 text-left text-xs font-medium text-muted-foreground">
-                      Salon
-                    </th>
-                    {SLOTS.map((slot) => (
-                      <th
-                        key={slot}
-                        className="p-2 text-center text-xs font-medium text-muted-foreground"
-                      >
-                        {slot}
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <div className="inline-block min-w-full align-middle">
+                <table className="w-full min-w-[500px]">
+                  <thead>
+                    <tr>
+                      <th className="sticky left-0 z-10 bg-card p-1.5 sm:p-2 text-left text-[10px] sm:text-xs font-medium text-muted-foreground min-w-[140px] sm:min-w-[180px] w-[140px] sm:w-[180px]">
+                        Salon
                       </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {halls.map((hall) => (
-                    <tr key={hall.id} className="border-t border-border">
-                      <td className="p-2">
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/dashboard/${hall.id}`)}
-                          className="text-left text-sm font-medium text-foreground hover:text-primary"
-                        >
-                          {hall.name.length > 20
-                            ? hall.name.substring(0, 18) + "..."
-                            : hall.name}
-                        </button>
-                      </td>
-                      {SLOTS.map((slot) => {
-                        const slotInfo = getSlotStatus(hall.id, slot);
-                        const isBooked = slotInfo.status === "booked";
-                        return (
-                          <td key={slot} className="p-1 text-center align-top">
+                      {viewMode === "week" && weekDays.length > 0 ? (
+                        // Hafta görünümü: Günler sütunları
+                        weekDays.map((day) => (
+                          <th
+                            key={day.date}
+                            className="p-1 sm:p-1.5 md:p-2 text-center text-[9px] sm:text-[10px] md:text-xs font-medium text-muted-foreground min-w-[80px] sm:min-w-[100px]"
+                          >
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className={cn(
+                                "text-[9px] sm:text-[10px] font-medium",
+                                day.isToday && "text-primary font-bold"
+                              )}>
+                                {daysOfWeek[day.dayOfWeek]}
+                              </span>
+                              <span className={cn(
+                                "text-[10px] sm:text-xs text-muted-foreground",
+                                day.isToday && "text-primary font-bold"
+                              )}>
+                                {day.displayDate}
+                              </span>
+                            </div>
+                          </th>
+                        ))
+                      ) : (
+                        // Gün görünümü: Saatler sütunları
+                        SLOTS.map((slot) => (
+                          <th
+                            key={slot}
+                            className="p-1.5 sm:p-2 text-center text-[10px] sm:text-xs font-medium text-muted-foreground"
+                          >
+                            {slot}
+                          </th>
+                        ))
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedCenterId === "all" ? (
+                      // Tüm merkezler seçiliyse, merkezlere göre grupla
+                      hallsByCenter.map(({ center, halls: centerHalls }) => (
+                        <Fragment key={`center-group-${center.id}`}>
+                          {/* Merkez başlık satırı */}
+                          <tr className="border-t-2 border-primary bg-primary/5">
+                            <td colSpan={viewMode === "week" ? weekDays.length + 1 : SLOTS.length + 1} className="p-2 sm:p-3">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-4 w-4 text-primary" />
+                                <span className="text-sm sm:text-base font-semibold text-foreground">{center.name}</span>
+                                <Badge variant="secondary" className="ml-auto">
+                                  {centerHalls.length} Salon
+                                </Badge>
+                              </div>
+                            </td>
+                          </tr>
+                          {/* Bu merkeze ait salonlar */}
+                          {centerHalls.map((hall) => (
+                            <tr key={hall.id} className="border-t border-border">
+                              <td className="sticky left-0 z-10 bg-card p-1.5 sm:p-2 min-w-[140px] sm:min-w-[180px] w-[140px] sm:w-[180px]">
+                                <button
+                                  type="button"
+                                  onClick={() => router.push(`/dashboard/${hall.id}`)}
+                                  className="text-left text-xs sm:text-sm font-medium text-foreground hover:text-primary break-words w-full"
+                                  title={hall.name}
+                                >
+                                  {hall.name}
+                                </button>
+                              </td>
+                              {viewMode === "week" && weekDays.length > 0 ? (
+                                // Hafta görünümü: Her gün için saatler
+                                weekDays.map((day) => (
+                                  <td key={day.date} className="p-1 sm:p-1.5 md:p-2 align-top">
+                                    <div className="space-y-1">
+                                      {SLOTS.map((slot) => {
+                                        const slotInfo = getSlotStatus(hall.id, slot, day.date);
+                                        const isBooked = slotInfo.status === "booked";
+                                        return (
+                                          <div
+                                            key={slot}
+                                            className={cn(
+                                              "flex items-center justify-center rounded-md px-1 py-0.5 text-[7px] sm:text-[8px] font-medium transition-colors",
+                                              !isBooked &&
+                                                "bg-green-100 text-green-700",
+                                              isBooked &&
+                                                "bg-red-100 text-red-700"
+                                            )}
+                                            title={
+                                              !isBooked
+                                                ? "Müsait"
+                                                : slotInfo.eventName 
+                                                  ? `${slotInfo.eventName} - Dolu`
+                                                  : "Dolu"
+                                            }
+                                          >
+                                            {isBooked && slotInfo.eventName ? (
+                                              <span className="truncate max-w-[60px] sm:max-w-[80px]">
+                                                {slotInfo.eventName.length > 8
+                                                  ? slotInfo.eventName.substring(0, 6) + "..."
+                                                  : slotInfo.eventName}
+                                              </span>
+                                            ) : isBooked ? (
+                                              <span className="opacity-70">D</span>
+                                            ) : (
+                                              <span className="opacity-50">M</span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+                                ))
+                              ) : (
+                                // Gün görünümü: Seçilen gün için saatler
+                                selectedStr && SLOTS.map((slot) => {
+                                  const slotInfo = getSlotStatus(hall.id, slot, selectedStr);
+                                  const isBooked = slotInfo.status === "booked";
+                                  return (
+                                    <td key={slot} className="p-0.5 sm:p-1 text-center align-top">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          !isBooked &&
+                                          router.push(`/dashboard/${hall.id}`)
+                                        }
+                                        className={cn(
+                                          "mx-auto flex min-h-[36px] sm:min-h-[48px] w-full max-w-[70px] sm:max-w-[90px] items-center justify-center rounded-md px-0.5 sm:px-1.5 py-0.5 sm:py-1.5 text-[8px] sm:text-[10px] font-medium leading-tight transition-colors",
+                                          !isBooked &&
+                                            "bg-green-100 hover:bg-green-200 cursor-pointer",
+                                          isBooked &&
+                                            "bg-red-100 cursor-not-allowed text-red-800 hover:bg-red-200"
+                                        )}
+                                        title={
+                                          !isBooked
+                                            ? "Müsait — Detay için tıklayın"
+                                            : slotInfo.eventName 
+                                              ? `${slotInfo.eventName} - Dolu`
+                                              : "Dolu"
+                                        }
+                                      >
+                                        {isBooked ? (
+                                          slotInfo.eventName ? (
+                                            <span className="line-clamp-2 break-words text-center w-full">
+                                              <span className="hidden sm:inline">
+                                                {slotInfo.eventName.length > 15
+                                                  ? slotInfo.eventName.substring(0, 13) + "..."
+                                                  : slotInfo.eventName}
+                                              </span>
+                                              <span className="sm:hidden text-[8px] leading-tight">
+                                                {slotInfo.eventName.length > 8
+                                                  ? slotInfo.eventName.substring(0, 6) + "..."
+                                                  : slotInfo.eventName}
+                                              </span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-[8px] sm:text-[9px] opacity-70">Dolu</span>
+                                          )
+                                        ) : (
+                                          <span className="text-[7px] sm:text-[8px] text-green-700 opacity-50">Müsait</span>
+                                        )}
+                                      </button>
+                                    </td>
+                                  );
+                                })
+                              )}
+                            </tr>
+                          ))}
+                        </Fragment>
+                      ))
+                    ) : (
+                      // Belirli bir merkez seçiliyse, sadece o merkezin salonlarını göster
+                      filteredHalls.map((hall) => (
+                        <tr key={hall.id} className="border-t border-border">
+                          <td className="sticky left-0 z-10 bg-card p-1.5 sm:p-2 min-w-[140px] sm:min-w-[180px] w-[140px] sm:w-[180px]">
                             <button
                               type="button"
-                              onClick={() =>
-                                !isBooked &&
-                                router.push(`/dashboard/${hall.id}`)
-                              }
-                              className={cn(
-                                "mx-auto flex min-h-[48px] w-full max-w-[90px] items-center justify-center rounded-md px-1.5 py-1.5 text-[10px] font-medium leading-tight transition-colors",
-                                !isBooked &&
-                                  "bg-green-100 hover:bg-green-200 cursor-pointer",
-                                isBooked &&
-                                  "bg-red-100 cursor-not-allowed text-red-800 hover:bg-red-200"
-                              )}
-                              title={
-                                !isBooked
-                                  ? "Müsait — Detay için tıklayın"
-                                  : slotInfo.eventName 
-                                    ? `${slotInfo.eventName} - Dolu`
-                                    : "Dolu"
-                              }
+                              onClick={() => router.push(`/dashboard/${hall.id}`)}
+                              className="text-left text-xs sm:text-sm font-medium text-foreground hover:text-primary break-words w-full"
+                              title={hall.name}
                             >
-                              {isBooked && slotInfo.eventName ? (
-                                <span className="line-clamp-2 break-words text-center">
-                                  {slotInfo.eventName.length > 15
-                                    ? slotInfo.eventName.substring(0, 13) + "..."
-                                    : slotInfo.eventName}
-                                </span>
-                              ) : isBooked ? (
-                                <span className="text-[9px] opacity-70">Dolu</span>
-                              ) : (
-                                <span className="text-[8px] text-green-700 opacity-50">Müsait</span>
-                              )}
+                              {hall.name}
                             </button>
                           </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          {viewMode === "week" && weekDays.length > 0 ? (
+                            // Hafta görünümü: Her gün için saatler
+                            weekDays.map((day) => (
+                              <td key={day.date} className="p-1 sm:p-1.5 md:p-2 align-top">
+                                <div className="space-y-1">
+                                  {SLOTS.map((slot) => {
+                                    const slotInfo = getSlotStatus(hall.id, slot, day.date);
+                                    const isBooked = slotInfo.status === "booked";
+                                    return (
+                                      <div
+                                        key={slot}
+                                        className={cn(
+                                          "flex items-center justify-center rounded-md px-1 py-0.5 text-[7px] sm:text-[8px] font-medium transition-colors",
+                                          !isBooked &&
+                                            "bg-green-100 text-green-700",
+                                          isBooked &&
+                                            "bg-red-100 text-red-700"
+                                        )}
+                                        title={
+                                          !isBooked
+                                            ? "Müsait"
+                                            : slotInfo.eventName 
+                                              ? `${slotInfo.eventName} - Dolu`
+                                              : "Dolu"
+                                        }
+                                      >
+                                        {isBooked && slotInfo.eventName ? (
+                                          <span className="truncate max-w-[60px] sm:max-w-[80px]">
+                                            {slotInfo.eventName.length > 8
+                                              ? slotInfo.eventName.substring(0, 6) + "..."
+                                              : slotInfo.eventName}
+                                          </span>
+                                        ) : isBooked ? (
+                                          <span className="opacity-70">D</span>
+                                        ) : (
+                                          <span className="opacity-50">M</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                            ))
+                          ) : (
+                            // Gün görünümü: Seçilen gün için saatler
+                            selectedStr && SLOTS.map((slot) => {
+                              const slotInfo = getSlotStatus(hall.id, slot, selectedStr);
+                              const isBooked = slotInfo.status === "booked";
+                              return (
+                                <td key={slot} className="p-0.5 sm:p-1 text-center align-top">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      !isBooked &&
+                                      router.push(`/dashboard/${hall.id}`)
+                                    }
+                                    className={cn(
+                                      "mx-auto flex min-h-[36px] sm:min-h-[48px] w-full max-w-[70px] sm:max-w-[90px] items-center justify-center rounded-md px-0.5 sm:px-1.5 py-0.5 sm:py-1.5 text-[8px] sm:text-[10px] font-medium leading-tight transition-colors",
+                                      !isBooked &&
+                                        "bg-green-100 hover:bg-green-200 cursor-pointer",
+                                      isBooked &&
+                                        "bg-red-100 cursor-not-allowed text-red-800 hover:bg-red-200"
+                                    )}
+                                    title={
+                                      !isBooked
+                                        ? "Müsait — Detay için tıklayın"
+                                        : slotInfo.eventName 
+                                          ? `${slotInfo.eventName} - Dolu`
+                                          : "Dolu"
+                                    }
+                                  >
+                                    {isBooked ? (
+                                      slotInfo.eventName ? (
+                                        <span className="line-clamp-2 break-words text-center w-full">
+                                          <span className="hidden sm:inline">
+                                            {slotInfo.eventName.length > 15
+                                              ? slotInfo.eventName.substring(0, 13) + "..."
+                                              : slotInfo.eventName}
+                                          </span>
+                                          <span className="sm:hidden text-[8px] leading-tight">
+                                            {slotInfo.eventName.length > 8
+                                              ? slotInfo.eventName.substring(0, 6) + "..."
+                                              : slotInfo.eventName}
+                                          </span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[8px] sm:text-[9px] opacity-70">Dolu</span>
+                                      )
+                                    ) : (
+                                      <span className="text-[7px] sm:text-[8px] text-green-700 opacity-50">Müsait</span>
+                                    )}
+                                  </button>
+                                </td>
+                              );
+                            })
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -604,7 +1031,7 @@ export function CalendarView() {
                     </div>
                     <div>
                       <p className="font-medium text-foreground">
-                        {(r as ScheduleWithHall).eventName || "Etkinlik Adı Yok"}
+                        {(r as ScheduleWithHall).eventName}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {formatTimeRange(r)} • {r.hallName}
@@ -640,7 +1067,7 @@ export function CalendarView() {
 
       {/* Detay Dialog'u */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Rezervasyon Detayları</DialogTitle>
             <DialogDescription>

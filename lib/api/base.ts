@@ -13,7 +13,15 @@ const getBaseUrl = (): string => {
 
 export type FetchOptions = RequestInit & { skipAuth?: boolean };
 
-type ErrorBody = { message?: string; errors?: string[] };
+type ErrorBody = { 
+  success?: boolean;
+  message?: string; 
+  errors?: string[] | IReadOnlyList<string>;
+};
+
+interface IReadOnlyList<T> extends Array<T> {
+  readonly length: number;
+}
 
 /**
  * Fetch wrapper: base URL from NEXT_PUBLIC_API_URL, JWT from sessionStorage,
@@ -39,7 +47,27 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
 
   if (!skipAuth) {
     const token = getToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      // Debug: Token'daki rol bilgisini kontrol et (sadece development'ta)
+      if (process.env.NODE_ENV === "development") {
+        try {
+          const payload = JSON.parse(atob(token.split(".")[1]));
+          // ASP.NET Core JWT'de rol claim'i farklı key'lerde olabilir
+          const role = payload[`http://schemas.microsoft.com/ws/2008/06/identity/claims/role`] 
+                    || payload[`role`] 
+                    || payload[`Role`]
+                    || payload[`http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role`];
+          if (path.includes("/requests")) {
+            console.log("🔍 Token Debug - Full payload:", payload);
+            console.log("🔍 Token Debug - Role found:", role);
+            console.log("🔍 Token Debug - All claim keys:", Object.keys(payload));
+          }
+        } catch (e) {
+          console.error("Token parse error:", e);
+        }
+      }
+    }
   }
 
   try {
@@ -68,19 +96,29 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
           if (text) {
             try {
               body = JSON.parse(text) as ErrorBody;
+              // Debug: Parse edilen body'yi logla
+              if (res.status === 400) {
+                console.debug("Parsed error body:", body);
+              }
             } catch (parseErr) {
               // JSON parse başarısız, text'i direkt kullan
+              console.warn("JSON parse hatası:", parseErr, "Raw text:", text);
               text = text.trim();
             }
+          } else {
+            console.warn("Response body boş (text empty)");
           }
         } else {
           // JSON değilse text olarak oku
           text = await res.text();
           text = text.trim();
+          if (res.status === 400) {
+            console.warn("Non-JSON response for 400 error:", text);
+          }
         }
       } catch (readError) {
         // Response body okunamadı
-        console.warn("Response body okunamadı:", readError);
+        console.error("Response body okunamadı:", readError);
       }
       
       let message = `HTTP ${res.status}`;
@@ -104,13 +142,19 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
       
       // Backend'den gelen mesajı parse et
       if (body) {
+        // Backend ApiResponse formatı: { success: false, message: "...", errors: [...] }
         if (body.message) {
           message = body.message;
         }
-        if (Array.isArray(body.errors) && body.errors.length) {
-          errors = body.errors;
-          if (!body.message) {
-            message = body.errors.join(", ");
+        // errors array'ini kontrol et
+        if (body.errors) {
+          const errorArray = Array.isArray(body.errors) ? body.errors : [];
+          if (errorArray.length > 0) {
+            errors = errorArray;
+            // Eğer message yoksa, errors'dan oluştur
+            if (!body.message || body.message === "Validation failed.") {
+              message = errorArray.join(", ");
+            }
           }
         }
       } else if (text) {
@@ -125,21 +169,41 @@ export async function fetchApi<T>(path: string, options: FetchOptions = {}): Pro
           sessionStorage.removeItem(TOKEN_KEY);
         }
         // 401 hatalarını console'a yazdırma (normal durum - token yoksa)
+      } else if (res.status === 403) {
+        // 403 (Forbidden) hataları için özel mesaj
+        if (!body || !body.message) {
+          message = "Bu işlem için yetkiniz bulunmamaktadır. Lütfen yöneticinizle iletişime geçin.";
+        }
+        console.error(`API Error [403 Forbidden]:`, {
+          url,
+          method: init.method || "GET",
+          message,
+          errors,
+          responseBody: body ? JSON.stringify(body, null, 2) : text || "(empty)",
+          contentType,
+        });
       } else {
         // Diğer hataları console'a yazdır (daha detaylı)
-        console.error(`API Error [${res.status}]:`, {
+        const errorDetails = {
           url,
           method: init.method || "GET",
           status: res.status,
           statusText: res.statusText,
           message,
-          errors,
-          responseBody: body || text || "(empty)",
+          errors: errors && errors.length > 0 ? errors : undefined,
+          responseBody: body ? JSON.stringify(body, null, 2) : text || "(empty)",
           responseText: text || "(empty)",
           responseTextLength: text?.length || 0,
           contentType,
           requestBody: requestBody ? JSON.stringify(requestBody, null, 2) : "(none)",
-        });
+        };
+        
+        console.error(`API Error [${res.status}]:`, errorDetails);
+        
+        // Eğer validation hatası varsa, kullanıcıya daha anlaşılır mesaj göster
+        if (res.status === 400 && errors && errors.length > 0) {
+          console.error("Validation Errors:", errors);
+        }
       }
       
       throw new ApiError(message, errors, res.status);

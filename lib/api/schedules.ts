@@ -11,6 +11,10 @@ type ScheduleDto = {
   startTime: string;
   endTime: string;
   status: number;
+  createdByUserId?: string;
+  eventType?: number;
+  eventName?: string;
+  eventOwner?: string;
 };
 
 function toSchedule(d: ScheduleDto): Schedule {
@@ -21,6 +25,10 @@ function toSchedule(d: ScheduleDto): Schedule {
     startTime: d.startTime,
     endTime: d.endTime,
     status: d.status === 1 ? "Reserved" : "Available",
+    createdByUserId: d.createdByUserId,
+    eventType: d.eventType,
+    eventName: d.eventName,
+    eventOwner: d.eventOwner,
   };
 }
 
@@ -30,6 +38,9 @@ export type UpdateScheduleData = {
   startTime: string;
   endTime: string;
   status: "Available" | "Reserved";
+  eventType?: number;
+  eventName?: string;
+  eventOwner?: string;
 };
 
 export async function getSchedulesByHall(hallId: string): Promise<Schedule[]> {
@@ -38,13 +49,29 @@ export async function getSchedulesByHall(hallId: string): Promise<Schedule[]> {
 }
 
 export async function createSchedule(data: UpdateScheduleData): Promise<Schedule> {
-  const body = {
+  const body: any = {
     weddingHallId: data.weddingHallId,
     date: data.date,
     startTime: data.startTime,
     endTime: data.endTime,
     status: data.status === "Available" ? 0 : 1,
   };
+  
+  // Sadece Reserved durumunda event bilgilerini ekle
+  if (data.status === "Reserved") {
+    if (data.eventType !== undefined && data.eventType !== null) {
+      body.eventType = data.eventType;
+    }
+    if (data.eventName) {
+      body.eventName = data.eventName;
+    }
+    if (data.eventOwner) {
+      body.eventOwner = data.eventOwner;
+    }
+  }
+  
+  console.log("createSchedule - Request body:", JSON.stringify(body, null, 2));
+  
   const d = await fetchApi<ScheduleDto>(SCHEDULES, {
     method: "POST",
     body: JSON.stringify(body),
@@ -59,10 +86,19 @@ export async function updateSchedule(id: string, data: UpdateScheduleData): Prom
     startTime: data.startTime,
     endTime: data.endTime,
     status: data.status === "Available" ? 0 : 1,
+    eventType: data.eventType,
+    eventName: data.eventName,
+    eventOwner: data.eventOwner,
   };
   const d = await fetchApi<ScheduleDto>(`${SCHEDULES}/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
   return toSchedule(d);
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  await fetchApi<void>(`${SCHEDULES}/${id}`, {
+    method: "DELETE",
+  });
 }

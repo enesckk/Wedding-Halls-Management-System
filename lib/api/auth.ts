@@ -1,5 +1,9 @@
 import { fetchApi } from "./base";
 import type { User } from "@/lib/types";
+import { ApiError } from "@/lib/utils/api-error";
+
+// Re-export User type for convenience
+export type { User };
 
 const AUTH = "/api/v1/auth";
 
@@ -17,19 +21,24 @@ type UserInfoDto = {
   email: string;
   fullName: string;
   role: string;
+  department?: number;
+  phone?: string;
 };
 
 function toUser(d: UserInfoDto): User {
+  console.log("📝 toUser - department:", d.department, "role:", d.role);
   return {
     id: d.id,
-    name: d.fullName,
+    name: d.fullName === "Super Admin" ? "Yönetici" : d.fullName,
     email: d.email,
     role: d.role as User["role"],
+    department: d.department,
+    phone: d.phone,
   };
 }
 
 // Mock users for development when backend is not available
-const MOCK_USERS: Record<string, { password: string; id: string; name: string; role: "Viewer" | "Editor" }> = {
+const MOCK_USERS: Record<string, { password: string; id: string; name: string; role: "Viewer" | "Editor" | "SuperAdmin"; department?: number; phone?: string }> = {
   "viewer@nikahsalon.local": {
     password: "Viewer1!",
     id: "mock-viewer-1",
@@ -41,6 +50,15 @@ const MOCK_USERS: Record<string, { password: string; id: string; name: string; r
     id: "mock-editor-1",
     name: "Editor User",
     role: "Editor",
+    department: 0, // Nikah
+    phone: "0555 123 45 67",
+  },
+  "admin@nikahsalon.local": {
+    password: "Admin1!",
+    id: "mock-admin-1",
+    name: "Yönetici",
+    role: "SuperAdmin",
+    phone: "0555 999 88 77",
   },
 };
 
@@ -98,11 +116,14 @@ async function mockGetCurrentUser(): Promise<User> {
 
   try {
     const payload = JSON.parse(atob(token.replace("mock-token-", "")));
+    const mockUser = MOCK_USERS[payload.email?.toLowerCase()];
     return {
       id: payload.userId,
-      name: payload.role === "Viewer" ? "Viewer User" : "Editor User",
+      name: payload.role === "Viewer" ? "Viewer User" : payload.role === "SuperAdmin" ? "Yönetici" : "Editor User",
       email: payload.email,
       role: payload.role as User["role"],
+      department: mockUser?.department,
+      phone: mockUser?.phone,
     };
   } catch {
     throw new Error("Invalid token");
@@ -112,20 +133,108 @@ async function mockGetCurrentUser(): Promise<User> {
 export async function getCurrentUser(): Promise<User> {
   try {
     const d = await fetchApi<UserInfoDto>(`${AUTH}/me`);
-    return toUser(d);
-  } catch (error) {
-    // Only use mock user for actual network errors, not auth errors (401, etc.)
+    console.log("🔍 Backend'den gelen user data:", d);
+    const user = toUser(d);
+    console.log("👤 Dönüştürülmüş user:", user);
+    return user;
+  } catch (error: any) {
+    // Backend çalışmıyorsa veya 401 hatası varsa mock kullan
+    // 401 hatası token yoksa veya geçersizse oluşur, bu durumda mock'a düş
     if (
-      error instanceof Error &&
-      error.name === "NetworkError"
+      (error instanceof Error && error.name === "NetworkError") ||
+      (error?.status === 401) ||
+      (error?.status === 404)
     ) {
-      console.warn("Backend API not available, using mock user data");
-      return mockGetCurrentUser();
+      console.warn("Backend API not available or unauthorized, using mock user data");
+      try {
+        return mockGetCurrentUser();
+      } catch (mockError) {
+        // Mock'ta da token yoksa, boş user döndür (login sayfasına yönlendirilecek)
+        throw new Error("Unauthorized");
+      }
     }
-    // Re-throw auth errors (401, etc.) as-is
+    // Diğer hataları olduğu gibi throw et
     throw error;
   }
 }
 
 /** @deprecated Use getCurrentUser. Kept for backward compatibility. */
 export const getMe = getCurrentUser;
+
+// Get all users (for contacts/people page)
+// Backend endpoint: GET /api/v1/auth/users?page=1&pageSize=1000 (tüm kullanıcılar için)
+// veya GET /api/v1/users?page=1&pageSize=1000 (sadece SuperAdmin için)
+type GetUsersResponse = {
+  items: UserInfoDto[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+export async function getAllUsers(): Promise<User[]> {
+  try {
+    // Önce /api/v1/auth/users endpoint'ini dene (tüm kullanıcılar erişebilir)
+    try {
+      const response = await fetchApi<GetUsersResponse>(`${AUTH}/users?page=1&pageSize=1000`);
+      return response.items.map(toUser);
+    } catch (authError) {
+      // Eğer auth/users yoksa, /api/v1/users endpoint'ini dene (sadece SuperAdmin)
+      const response = await fetchApi<GetUsersResponse>(`/api/v1/users?page=1&pageSize=1000`);
+      return response.items.map(toUser);
+    }
+  } catch (error) {
+    // 404, 403 veya NetworkError durumunda mock data kullan
+    const isNetworkError = error instanceof Error && error.name === "NetworkError";
+    const is404 = error instanceof ApiError && error.status === 404;
+    const is403 = error instanceof ApiError && error.status === 403;
+    
+    if (isNetworkError || is404 || is403) {
+      console.warn("Backend API not available, endpoint not found, or insufficient permissions. Using mock users data.");
+      // Mock users listesi - gerçek kullanıcılar backend'den geldiğinde bunlar yerine kullanılacak
+      const mockUsersList: User[] = [
+        {
+          id: "mock-admin-1",
+          name: "Yönetici",
+          email: "admin@nikahsalon.local",
+          role: "SuperAdmin",
+          phone: "0555 999 88 77",
+        },
+        {
+          id: "mock-editor-1",
+          name: "Nikah Sorumlusu",
+          email: "editor@nikahsalon.local",
+          role: "Editor",
+          department: 0,
+          phone: "0555 123 45 67",
+        },
+        {
+          id: "mock-editor-2",
+          name: "Toplantı Sorumlusu",
+          email: "toplanti@nikahsalon.local",
+          role: "Editor",
+          department: 3,
+          phone: "0555 234 56 78",
+        },
+        {
+          id: "mock-editor-3",
+          name: "Konser Sorumlusu",
+          email: "konser@nikahsalon.local",
+          role: "Editor",
+          department: 2,
+          phone: "0555 345 67 89",
+        },
+        {
+          id: "mock-editor-4",
+          name: "Nişan Sorumlusu",
+          email: "nisan@nikahsalon.local",
+          role: "Editor",
+          department: 1,
+          phone: "0555 456 78 90",
+        },
+      ];
+      return mockUsersList;
+    }
+    throw error;
+  }
+}

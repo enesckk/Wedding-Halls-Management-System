@@ -4,17 +4,20 @@ import Link from "next/link";
 import Image from "next/image";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MapPin, Users } from "lucide-react";
+import { MapPin, Users, Edit, Trash2, MessageSquarePlus } from "lucide-react";
 import type { WeddingHall } from "@/lib/types";
-import { RequestModal } from "@/components/request-modal";
 import { useUser } from "@/lib/user-context";
 import { isViewer } from "@/lib/utils/role";
 
 interface HallCardProps {
   hall: WeddingHall;
+  /** SuperAdmin: salon düzenleme */
+  onEdit?: (hall: WeddingHall) => void;
+  /** SuperAdmin: salon silme */
+  onDelete?: (hall: WeddingHall) => void;
 }
 
-export function HallCard({ hall }: HallCardProps) {
+export function HallCard({ hall, onEdit, onDelete }: HallCardProps) {
   const { user } = useUser();
   const canRequest = isViewer(user?.role);
 
@@ -46,15 +49,34 @@ export function HallCard({ hall }: HallCardProps) {
       </CardContent>
       
       <CardFooter className="flex flex-col gap-2 border-t border-border bg-muted/30 p-4">
-        <Link href={`/dashboard/${hall.id}`} className="w-full">
-          <Button
-            variant="default"
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            Detayları Gör
-          </Button>
-        </Link>
-        {canRequest && <RequestModal hallId={hall.id} hallName={hall.name} />}
+        <div className="flex gap-2 w-full">
+          <Link href={`/dashboard/${hall.id}`} className="flex-1">
+            <Button
+              variant="default"
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              Detayları Gör
+            </Button>
+          </Link>
+          {onEdit && (
+            <Button variant="outline" size="icon" onClick={() => onEdit(hall)} title="Düzenle">
+              <Edit className="h-4 w-4" />
+            </Button>
+          )}
+          {onDelete && (
+            <Button variant="outline" size="icon" onClick={() => onDelete(hall)} title="Sil" className="text-destructive hover:text-destructive">
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+        {canRequest && (
+          <Link href={`/dashboard/talep-et?hallId=${hall.id}`} className="w-full">
+            <Button variant="outline" className="w-full gap-2">
+              <MessageSquarePlus className="h-4 w-4" />
+              Talep Oluştur
+            </Button>
+          </Link>
+        )}
       </CardFooter>
     </Card>
   );

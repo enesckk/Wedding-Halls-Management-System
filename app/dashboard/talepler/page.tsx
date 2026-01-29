@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@/lib/user-context";
-import { isEditor as isEditorRole, isViewer as isViewerRole } from "@/lib/utils/role";
+import { canEdit, isViewer as isViewerRole } from "@/lib/utils/role";
 import { getRequests, approveRequest, rejectRequest, updateRequest, deleteRequest, type UpdateRequestData } from "@/lib/api/requests";
 import { getHalls } from "@/lib/api/halls";
+import { getSchedulesByHall } from "@/lib/api/schedules";
 import { getMessagesByRequestId, createMessage, type MessageDto } from "@/lib/api/messages";
-import type { Request as Req, WeddingHall } from "@/lib/types";
+import type { Request as Req, WeddingHall, Schedule } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +49,7 @@ import {
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { sanitizeText } from "@/lib/utils/sanitize";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const EVENT_TYPES = [
   { value: 0, label: "Nikah" },
@@ -130,6 +132,8 @@ export default function RequestsPage() {
   const [editFormData, setEditFormData] = useState<UpdateRequestData>({});
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
+  const [conflictCheckLoading, setConflictCheckLoading] = useState<Record<string, boolean>>({});
+  const [conflicts, setConflicts] = useState<Record<string, Schedule[]>>({}); // requestId -> conflicting schedules
 
   const loadRequests = useCallback(async () => {
     if (!user) return;
@@ -140,11 +144,17 @@ export default function RequestsPage() {
       setHalls(h ?? []);
       
       // Viewer için sadece kendi taleplerini filtrele
+      // Editor için sadece kendi departmanına ait talepleri göster
       const isViewer = isViewerRole(user.role);
+      const isEditor = canEdit(user.role);
       let filteredReqs = reqs ?? [];
       
       if (isViewer && user.id) {
         filteredReqs = filteredReqs.filter((r) => r.createdByUserId === user.id);
+      } else if (isEditor && user.department !== undefined && user.department !== null) {
+        // Editor için: Sadece kendi departmanına ait talepleri göster
+        // eventType: 0=Nikah, 1=Nişan, 2=Konser, 3=Toplantı, 4=Özel
+        filteredReqs = filteredReqs.filter((r) => r.eventType === user.department);
       }
       
       const withHall = filteredReqs.map((r) => ({
@@ -212,6 +222,57 @@ export default function RequestsPage() {
     }
   }, [authLoading, user?.id, loadRequests]);
 
+  const checkConflict = useCallback(async (req: Req) => {
+    if (!req || req.status !== "Pending") {
+      setConflicts((prev) => ({ ...prev, [req.id]: [] }));
+      return;
+    }
+
+    // Eğer zaten kontrol ediliyorsa tekrar kontrol etme
+    if (conflictCheckLoading[req.id]) return;
+
+    setConflictCheckLoading((prev) => ({ ...prev, [req.id]: true }));
+    try {
+      const schedules = await getSchedulesByHall(req.weddingHallId);
+      const requestDate = req.eventDate.includes('T') ? req.eventDate.split('T')[0] : req.eventDate;
+      const requestTime = req.eventTime.slice(0, 5); // "HH:MM" formatına getir
+      
+      const conflicting = (schedules ?? []).filter((s) => {
+        let scheduleDate = s.date;
+        if (scheduleDate.includes('T')) {
+          scheduleDate = scheduleDate.split('T')[0];
+        }
+        const scheduleStartTime = s.startTime.slice(0, 5);
+        
+        return (
+          scheduleDate === requestDate &&
+          scheduleStartTime === requestTime &&
+          s.status === "Reserved"
+        );
+      });
+      
+      setConflicts((prev) => ({ ...prev, [req.id]: conflicting }));
+    } catch (e) {
+      console.error("Conflict check error:", e);
+      setConflicts((prev) => ({ ...prev, [req.id]: [] }));
+    } finally {
+      setConflictCheckLoading((prev) => ({ ...prev, [req.id]: false }));
+    }
+  }, []);
+
+  // Sayfa yüklendiğinde tüm bekleyen talepler için çakışma kontrolü yap
+  useEffect(() => {
+    if (!loading && requests.length > 0) {
+      const pendingRequests = requests.filter((r) => r.status === "Pending");
+      pendingRequests.forEach((req) => {
+        // Sadece daha önce kontrol edilmemişse kontrol et
+        if (!conflictCheckLoading[req.id] && !conflicts[req.id]) {
+          checkConflict(req);
+        }
+      });
+    }
+  }, [loading, requests, checkConflict]);
+
   const loadMessages = useCallback(async (requestId: string) => {
     setLoadingMessages(true);
     try {
@@ -228,10 +289,11 @@ export default function RequestsPage() {
     setNewMessage("");
     if (selected) {
       loadMessages(selected.id);
+      checkConflict(selected);
     } else {
       setMessages([]);
     }
-  }, [selected?.id, loadMessages]);
+  }, [selected?.id, loadMessages, checkConflict]);
 
   const handleSendMessage = async () => {
     if (!selected || !newMessage.trim()) return;
@@ -349,7 +411,7 @@ export default function RequestsPage() {
     );
   }
 
-  if (!isEditorRole(user?.role) && !isViewerRole(user?.role)) {
+  if (!canEdit(user?.role) && !isViewerRole(user?.role)) {
     return <Unauthorized />;
   }
 
@@ -362,16 +424,16 @@ export default function RequestsPage() {
     const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
 
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Taleplerim</h1>
-          <p className="text-muted-foreground">
+      <div className="space-y-4 sm:space-y-6 w-full">
+        <div className="w-full">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Taleplerim</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
             Oluşturduğunuz talepleri ve durumlarını görüntüleyin
           </p>
         </div>
 
         {/* İstatistikler */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -509,7 +571,7 @@ export default function RequestsPage() {
         {/* Viewer için Talep Detay Dialog'u (sadece görüntüleme + mesajlar) */}
         {selected && (
           <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Building2 className="h-5 w-5 text-primary" />
@@ -632,7 +694,7 @@ export default function RequestsPage() {
             }
           }}
         >
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Talep Düzenle</DialogTitle>
               <DialogDescription>
@@ -806,22 +868,22 @@ export default function RequestsPage() {
     );
   }
 
-  // Editor için yönetim görünümü
-  const isEditor = isEditorRole(user?.role);
+  // Editor ve SuperAdmin için yönetim görünümü
+  const isEditor = canEdit(user?.role);
   const pendingCount = requests.filter((r) => r.status === "Pending").length;
   const approvedCount = requests.filter((r) => r.status === "Answered").length;
   const rejectedCount = requests.filter((r) => r.status === "Rejected").length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Talepler</h1>
-        <p className="text-muted-foreground">
+    <div className="space-y-4 sm:space-y-6 w-full">
+      <div className="w-full">
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">Talepler</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">
           Personelden gelen talepleri görüntüleyin ve yönetin
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -876,12 +938,18 @@ export default function RequestsPage() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {requests.map((req) => (
+          {requests.map((req) => {
+            const hasConflict = conflicts[req.id] && conflicts[req.id].length > 0;
+            return (
             <Card 
               key={req.id} 
-              className="cursor-pointer hover:bg-muted/50 transition-colors border-l-4"
+              className={cn(
+                "cursor-pointer hover:bg-muted/50 transition-colors border-l-4",
+                hasConflict && req.status === "Pending" && "border-orange-500 bg-orange-50/30 dark:bg-orange-950/10"
+              )}
               style={{
                 borderLeftColor: 
+                  hasConflict && req.status === "Pending" ? "#f97316" :
                   req.status === "Answered" ? "#22c55e" :
                   req.status === "Rejected" ? "#ef4444" : "#eab308"
               }}
@@ -890,12 +958,18 @@ export default function RequestsPage() {
               <CardContent className="p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <Building2 className="h-5 w-5 text-primary" />
                       <h3 className="font-semibold text-foreground text-lg">
                         {req.hallName}
                       </h3>
                       <StatusBadge status={req.status} />
+                      {hasConflict && req.status === "Pending" && (
+                        <Badge variant="outline" className="gap-1 border-orange-500 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
+                          <Info className="h-3 w-3" />
+                          Çakışma Var
+                        </Badge>
+                      )}
                     </div>
                     
                     {req.eventName && (
@@ -926,14 +1000,15 @@ export default function RequestsPage() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Talep Detay Dialog - Editor için */}
       {selected && (
         <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-primary" />
@@ -989,7 +1064,7 @@ export default function RequestsPage() {
 
               {/* Editor için işlem butonları */}
               {isEditor && (
-                <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2 border-t border-border pt-4">
                   {/* Düzenleme butonu - tüm durumlar için - ŞİMDİLİK KAPALI */}
                   {/* <Button
                     variant="outline"
@@ -1003,13 +1078,59 @@ export default function RequestsPage() {
                     Düzenle
                   </Button> */}
 
+                  {/* Çakışma Uyarısı */}
+                  {selected.status === "Pending" && conflicts[selected.id] && conflicts[selected.id].length > 0 && (
+                    <div className="w-full rounded-lg border-2 border-orange-500 bg-orange-50 dark:bg-orange-950/20 p-3 mb-2">
+                      <div className="flex items-start gap-2">
+                        <Info className="h-5 w-5 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-orange-800 dark:text-orange-300 mb-1">
+                            ⚠️ Çakışma Uyarısı
+                          </p>
+                          <p className="text-xs text-orange-700 dark:text-orange-400 mb-2">
+                            Bu talep için seçilen tarih ve saatte zaten bir rezervasyon bulunmaktadır:
+                          </p>
+                          <div className="space-y-1">
+                            {conflicts[selected.id].map((conflict) => (
+                              <div key={conflict.id} className="text-xs bg-white dark:bg-orange-900/30 rounded px-2 py-1 border border-orange-200 dark:border-orange-800">
+                                <span className="font-medium">• {conflict.eventName || "Etkinlik Adı Yok"}</span>
+                                {conflict.eventOwner && (
+                                  <span className="text-muted-foreground"> - {conflict.eventOwner}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs font-medium text-orange-800 dark:text-orange-300 mt-2">
+                            Bu talebi onaylarsanız, mevcut rezervasyonun üzerine yazılacaktır.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Onayla butonu - sadece Pending durumunda */}
                   {selected.status === "Pending" && (
                     <Button
-                      className="gap-2 bg-green-600 text-white hover:bg-green-700"
-                      disabled={actionId === selected.id}
+                      className={cn(
+                        "gap-2",
+                        conflicts[selected.id] && conflicts[selected.id].length > 0
+                          ? "bg-orange-600 text-white hover:bg-orange-700"
+                          : "bg-green-600 text-white hover:bg-green-700"
+                      )}
+                      disabled={actionId === selected.id || conflictCheckLoading[selected.id]}
                       onClick={async () => {
                         if (!selected) return;
+                        
+                        // Çakışma varsa onay iste
+                        if (conflicts[selected.id] && conflicts[selected.id].length > 0) {
+                          const confirmed = window.confirm(
+                            `Bu talep mevcut ${conflicts[selected.id].length} rezervasyonla çakışıyor. ` +
+                            `Onaylamaya devam etmek istediğinizden emin misiniz? ` +
+                            `Mevcut rezervasyon(lar) silinecek ve yeni rezervasyon oluşturulacaktır.`
+                          );
+                          if (!confirmed) return;
+                        }
+                        
                         setActionId(selected.id);
                         try {
                           await approveRequest(selected.id);
@@ -1025,7 +1146,13 @@ export default function RequestsPage() {
                       }}
                     >
                       <ThumbsUp className="h-4 w-4" />
-                      {actionId === selected.id ? "İşleniyor..." : "Onayla"}
+                      {actionId === selected.id 
+                        ? "İşleniyor..." 
+                        : conflictCheckLoading[selected.id]
+                        ? "Kontrol ediliyor..."
+                        : conflicts[selected.id] && conflicts[selected.id].length > 0
+                        ? "Yine de Onayla"
+                        : "Onayla"}
                     </Button>
                   )}
 

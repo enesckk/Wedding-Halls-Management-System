@@ -14,6 +14,7 @@ export const mockMessages: Message[] = [
     userId: "1",
     userName: "Ahmet Yılmaz",
     userRole: "Editor",
+    userDepartment: 0, // Nikah departmanı
     content: "Yarın saat 14:00'te Atatürk Nikah Salonu'nda bakım çalışması yapılacaktır. Lütfen randevuları kontrol ediniz.",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
     channel: "duyurular",
@@ -41,6 +42,7 @@ export const mockMessages: Message[] = [
     userId: "1",
     userName: "Ahmet Yılmaz",
     userRole: "Editor",
+    userDepartment: 0, // Nikah departmanı
     content: "Bu hafta sonu yoğun talep bekleniyor, lütfen ekstra dikkatli olalım.",
     timestamp: new Date(Date.now() - 1000 * 60 * 5),
     channel: "general",
@@ -95,6 +97,7 @@ export const mockRequests: Request[] = [
 export const weddingHalls: WeddingHall[] = [
   {
     id: "1",
+    centerId: "00000000-0000-0000-0000-000000000001",
     name: "Atatürk Nikah Salonu",
     address: "Cumhuriyet Mahallesi, Atatürk Caddesi No: 12, Merkez",
     capacity: 150,
@@ -114,6 +117,7 @@ export const weddingHalls: WeddingHall[] = [
   },
   {
     id: "2",
+    centerId: "00000000-0000-0000-0000-000000000001",
     name: "Cumhuriyet Nikah Salonu",
     address: "Yeni Mahalle, İstiklal Sokak No: 45, Merkez",
     capacity: 100,
@@ -133,6 +137,7 @@ export const weddingHalls: WeddingHall[] = [
   },
   {
     id: "3",
+    centerId: "00000000-0000-0000-0000-000000000001",
     name: "Bahçe Nikah Alanı",
     address: "Park Mahallesi, Yeşil Sokak No: 8, Merkez",
     capacity: 200,
@@ -152,6 +157,7 @@ export const weddingHalls: WeddingHall[] = [
   },
   {
     id: "4",
+    centerId: "00000000-0000-0000-0000-000000000001",
     name: "Tarihi Konak Nikah Salonu",
     address: "Kültür Mahallesi, Tarih Caddesi No: 3, Merkez",
     capacity: 80,
@@ -171,6 +177,7 @@ export const weddingHalls: WeddingHall[] = [
   },
   {
     id: "5",
+    centerId: "00000000-0000-0000-0000-000000000001",
     name: "Modern Nikah Salonu",
     address: "Yenişehir Mahallesi, Teknoloji Caddesi No: 25, Merkez",
     capacity: 120,
@@ -190,6 +197,7 @@ export const weddingHalls: WeddingHall[] = [
   },
   {
     id: "6",
+    centerId: "00000000-0000-0000-0000-000000000001",
     name: "Deniz Manzaralı Nikah Salonu",
     address: "Sahil Mahallesi, Liman Caddesi No: 1, Merkez",
     capacity: 90,

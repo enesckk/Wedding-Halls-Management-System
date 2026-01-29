@@ -7,6 +7,7 @@ const HALLS = "/api/v1/halls";
 
 type WeddingHallDto = {
   id: string;
+  centerId: string;
   name: string;
   address: string;
   capacity: number;
@@ -18,6 +19,7 @@ type WeddingHallDto = {
 function toHall(d: WeddingHallDto): WeddingHall {
   return {
     id: d.id,
+    centerId: d.centerId,
     name: d.name,
     address: d.address,
     capacity: d.capacity,
@@ -38,15 +40,26 @@ function isNetworkError(error: unknown): boolean {
 }
 
 export type CreateHallData = {
+  centerId: string;
   name: string;
   address: string;
   capacity: number;
   description: string;
   imageUrl: string;
   technicalDetails: string;
+  allowedUserIds?: string[]; // Editor kullanıcı ID'leri
 };
 
-export type UpdateHallData = CreateHallData;
+export type UpdateHallData = {
+  centerId: string;
+  name: string;
+  address: string;
+  capacity: number;
+  description: string;
+  imageUrl: string;
+  technicalDetails: string;
+  allowedUserIds?: string[]; // Editor kullanıcı ID'leri
+};
 
 export async function getHalls(): Promise<WeddingHall[]> {
   try {
@@ -60,6 +73,7 @@ export async function getHalls(): Promise<WeddingHall[]> {
       // Return mock data from lib/data.ts
       return weddingHalls.map((hall) => ({
         id: hall.id,
+        centerId: hall.centerId,
         name: hall.name,
         address: hall.address,
         capacity: hall.capacity,
@@ -84,6 +98,7 @@ export async function getHallById(id: string): Promise<WeddingHall | null> {
       if (!hall) return null;
       return {
         id: hall.id,
+        centerId: hall.centerId,
         name: hall.name,
         address: hall.address,
         capacity: hall.capacity,
@@ -119,12 +134,14 @@ export async function createHall(data: CreateHallData): Promise<WeddingHall> {
     }
     
     const cleanedData: any = {
+      centerId: data.centerId,
       name: (data.name.trim() || "").substring(0, 1000),
       address: (data.address.trim() || "").substring(0, 1000),
       capacity: data.capacity,
       description: (data.description.trim() || "").substring(0, 1000) || "",
       imageUrl: imageUrl, // Backend zorunlu istiyor, boş string gönderelim
       technicalDetails: technicalDetails || "",
+      allowedUserIds: data.allowedUserIds || [],
     };
     
     // Boş string'leri kontrol et - backend bazı alanlar için boş string bekliyor olabilir
@@ -259,12 +276,14 @@ export async function updateHall(id: string, data: UpdateHallData): Promise<Wedd
     }
     
     const cleanedData: any = {
+      centerId: data.centerId,
       name: (data.name.trim() || "").substring(0, 1000),
       address: (data.address.trim() || "").substring(0, 1000),
       capacity: data.capacity,
       description: (data.description.trim() || "").substring(0, 1000) || "",
       imageUrl: imageUrl, // Backend zorunlu istiyor, boş string gönderelim
       technicalDetails: technicalDetails || "",
+      allowedUserIds: data.allowedUserIds || [],
     };
     
     // Boş string'leri kontrol et
@@ -287,6 +306,10 @@ export async function updateHall(id: string, data: UpdateHallData): Promise<Wedd
     }
     throw error;
   }
+}
+
+export async function deleteHall(id: string): Promise<void> {
+  await fetchApi<void>(`${HALLS}/${id}`, { method: "DELETE" });
 }
 
 /** Re-export for backward compatibility. Prefer importing from schedules. */

@@ -29,7 +29,13 @@ export function toUserFriendlyMessage(err: unknown): string {
   if (err instanceof ApiError) {
     // Eğer detaylı validation hataları varsa, onları da göster
     if (err.errors && err.errors.length > 0) {
-      return `${err.message}\n\nDetaylar:\n${err.errors.map((e, i) => `${i + 1}. ${e}`).join("\n")}`;
+      // Validation hatalarını daha okunabilir formatta göster
+      const errorList = err.errors.map((e, i) => `${i + 1}. ${e}`).join("\n");
+      // Eğer mesaj generic ise (örn: "Validation failed."), sadece hataları göster
+      if (err.message === "Validation failed." || err.message === "Geçersiz istek. Lütfen girdiğiniz bilgileri kontrol edin.") {
+        return `Giriş bilgileri geçersiz:\n${errorList}`;
+      }
+      return `${err.message}\n\nDetaylar:\n${errorList}`;
     }
     return err.message;
   }

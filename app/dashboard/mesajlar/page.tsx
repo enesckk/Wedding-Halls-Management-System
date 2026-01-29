@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/user-context";
-import { isEditor as isEditorRole } from "@/lib/utils/role";
+import { canEdit, isSuperAdmin, isEditor as isEditorRole } from "@/lib/utils/role";
 import { mockMessages } from "@/lib/data";
 import { sanitizeText } from "@/lib/utils/sanitize";
 import type { Message, UserRole } from "@/lib/types";
@@ -21,6 +21,14 @@ import {
 } from "lucide-react";
 
 const MESAJLAR_STORAGE_KEY = "mesajlar-messages";
+
+const departmentNames: Record<number, string> = {
+  0: "Nikah",
+  1: "Nişan",
+  2: "Konser",
+  3: "Toplantı",
+  4: "Özel",
+};
 
 type StoredMessage = Omit<Message, "timestamp"> & { timestamp: string };
 
@@ -111,13 +119,14 @@ export default function MessagesPage() {
 
     const displayName =
       (user.name && user.name.trim()) || user.email || "Kullanıcı";
-    const displayRole: UserRole = user.role === "Editor" ? "Editor" : "Viewer";
+    const displayRole: UserRole = user.role === "SuperAdmin" ? "SuperAdmin" : user.role === "Editor" ? "Editor" : "Viewer";
 
     const message: Message = {
       id: Date.now().toString(),
       userId: user.id,
       userName: displayName,
       userRole: displayRole,
+      userDepartment: user.department, // Departman bilgisini ekle
       content: newMessage.trim(),
       timestamp: new Date(),
       channel: activeChannel,
@@ -136,16 +145,16 @@ export default function MessagesPage() {
   }, [activeChannel]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Mesajlar</h1>
-        <p className="text-muted-foreground">
+      <div className="w-full">
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">Mesajlar</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">
           Ekip ile iletişim kurun ve duyuruları takip edin
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-4">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-4">
         {/* Channels Sidebar */}
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
@@ -203,9 +212,9 @@ export default function MessagesPage() {
             </div>
           </CardHeader>
 
-          <CardContent className="flex h-[500px] flex-col overflow-hidden p-0">
+          <CardContent className="flex h-[400px] sm:h-[500px] flex-col overflow-hidden p-0">
             {/* Messages List */}
-            <ScrollArea className="min-h-0 flex-1 p-4">
+            <ScrollArea className="min-h-0 flex-1 p-3 sm:p-4">
               {filteredMessages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center py-12 text-center">
                   <MessageSquare className="h-12 w-12 text-muted-foreground/50" />
@@ -263,7 +272,13 @@ export default function MessagesPage() {
                             }
                             className="text-[10px]"
                           >
-                            {isEditorRole(message.userRole) ? "Editor" : "Viewer"}
+                            {isSuperAdmin(message.userRole) 
+                              ? "Yönetici" 
+                              : isEditorRole(message.userRole) 
+                                ? message.userDepartment !== undefined && message.userDepartment !== null && departmentNames[message.userDepartment]
+                                  ? `Editör - ${departmentNames[message.userDepartment]}`
+                                  : "Editör"
+                                : "Viewer"}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
                             {formatTime(message.timestamp)}
@@ -287,10 +302,10 @@ export default function MessagesPage() {
             </ScrollArea>
 
             {/* Message Input */}
-            <div className="border-t border-border p-4">
+            <div className="border-t border-border p-3 sm:p-4">
               {activeChannel === "duyurular" && !isEditor ? (
-                <div className="rounded-lg bg-muted p-3 text-center">
-                  <p className="text-sm text-muted-foreground">
+                <div className="rounded-lg bg-muted p-2 sm:p-3 text-center">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     Sadece Editor yetkisi duyuru yayınlayabilir
                   </p>
                 </div>
@@ -314,15 +329,16 @@ export default function MessagesPage() {
                         handleSendMessage();
                       }
                     }}
-                    className="flex-1"
+                    className="flex-1 text-sm sm:text-base"
                   />
                   <Button
                     onClick={handleSendMessage}
                     disabled={!newMessage.trim() || !user}
-                    className="gap-2"
+                    className="gap-1 sm:gap-2 shrink-0"
+                    size="sm"
                   >
-                    <Send className="h-4 w-4" />
-                    Gönder
+                    <Send className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Gönder</span>
                   </Button>
                 </div>
               )}

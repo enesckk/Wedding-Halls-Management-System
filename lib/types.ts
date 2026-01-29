@@ -1,11 +1,12 @@
-/** Backend-aligned: Editor = admin, Viewer = staff */
-export type UserRole = "Editor" | "Viewer";
+/** Backend-aligned: SuperAdmin = full access, Editor = limited admin, Viewer = read-only */
+export type UserRole = "SuperAdmin" | "Editor" | "Viewer";
 
 /**
  * Backend WeddingHallDto. availability is mock-only (calendar-view); API uses Schedule[].
  */
 export interface WeddingHall {
   id: string;
+  centerId: string; // Merkez ID'si
   name: string;
   address: string;
   capacity: number;
@@ -27,10 +28,12 @@ export interface Schedule {
   startTime: string;
   endTime: string;
   status: "Available" | "Reserved";
-  // Request bilgileri (eğer Reserved ise)
+  createdByUserId?: string;
+  eventType?: number;
+  // Etkinlik bilgileri (Dolu schedule'lar için)
   eventName?: string;
   eventOwner?: string;
-  eventType?: number;
+  // Request bilgileri (eğer Request'ten oluşturulduysa)
   requestId?: string;
 }
 
@@ -40,6 +43,11 @@ export interface User {
   email: string;
   role: UserRole;
   avatar?: string;
+  phone?: string;
+  /// <summary>
+  /// Editor'lar için alan/departman (Nikah=0, Nişan=1, Konser=2, Toplantı=3, Özel=4). SuperAdmin ve Viewer için null.
+  /// </summary>
+  department?: number;
 }
 
 /** Mesajlar page – mock only; no Messages API */
@@ -48,6 +56,7 @@ export interface Message {
   userId: string;
   userName: string;
   userRole: UserRole;
+  userDepartment?: number; // Editor'lar için departman bilgisi
   content: string;
   timestamp: Date;
   channel: "general" | "duyurular";

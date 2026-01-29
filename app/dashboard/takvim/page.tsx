@@ -12,11 +12,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getHalls } from "@/lib/api/halls";
-import { getSchedulesByHall, createSchedule, updateSchedule, type UpdateScheduleData } from "@/lib/api/schedules";
+import { getCenters } from "@/lib/api/centers";
+import { getSchedulesByHall, createSchedule, updateSchedule, deleteSchedule, type UpdateScheduleData } from "@/lib/api/schedules";
 import { getRequests } from "@/lib/api/requests";
 import type { Schedule, WeddingHall, Request } from "@/lib/types";
+import type { Center } from "@/lib/api/centers";
 import { useUser } from "@/lib/user-context";
-import { isEditor as isEditorRole, isViewer as isViewerRole } from "@/lib/utils/role";
+import { canManageSchedules, isViewer as isViewerRole, canAccessCenter } from "@/lib/utils/role";
 import {
   ChevronLeft,
   ChevronRight,
@@ -27,6 +29,10 @@ import {
   CheckCircle2,
   XCircle,
   TrendingUp,
+  Edit,
+  Trash2,
+  Building2,
+  Filter,
 } from "lucide-react";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
@@ -40,6 +46,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 const daysOfWeek = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 const monthNames = [
@@ -63,6 +70,14 @@ function formatTimeRange(s: Schedule): string {
   return `${start} - ${end}`;
 }
 
+/**
+ * Parse "HH:mm" or "HH:mm:ss" to minutes since midnight.
+ */
+function toMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
 type ScheduleWithHall = Schedule & { 
   hallName: string;
   eventName?: string;
@@ -73,28 +88,56 @@ type ScheduleWithHall = Schedule & {
 
 export default function TakvimPage() {
   const { user } = useUser();
-  const isEditor = isEditorRole(user?.role);
+  const canEdit = canManageSchedules(user?.role);
+  const isSuperAdmin = user?.role === "SuperAdmin";
+  const editorDepartment = user?.department; // Editor'ın alanı (0=Nikah, 1=Nişan, 2=Konser, 3=Toplantı, 4=Özel)
+  
+  // Debug: Editor department'ını logla
+  useEffect(() => {
+    if (user && !isSuperAdmin) {
+      console.log("👤 User Department:", user.department, "Role:", user.role);
+    }
+  }, [user, isSuperAdmin]);
   const [halls, setHalls] = useState<WeddingHall[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
+  const [selectedCenterId, setSelectedCenterId] = useState<string>("all");
   const [schedules, setSchedules] = useState<ScheduleWithHall[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [selectedHall, setSelectedHall] = useState<string>("all");
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleWithHall | null>(null);
+  const [scheduleToDelete, setScheduleToDelete] = useState<ScheduleWithHall | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
   const [selectedHallForSchedule, setSelectedHallForSchedule] = useState<string>("");
   const [scheduleStatus, setScheduleStatus] = useState<"Available" | "Reserved">("Reserved");
+  const [eventType, setEventType] = useState<number | undefined>(undefined);
+  const [eventName, setEventName] = useState<string>("");
+  const [eventOwner, setEventOwner] = useState<string>("");
+
+  // Dialog açıldığında ve "Dolu" seçildiğinde Editor için department'ı otomatik ayarla
+  useEffect(() => {
+    if (scheduleDialogOpen && scheduleStatus === "Reserved" && !isSuperAdmin && editorDepartment !== undefined && editorDepartment !== null) {
+      // Eğer eventType henüz set edilmemişse, editorDepartment'ı kullan
+      if (eventType === undefined || eventType === null) {
+        console.log("useEffect: Editor department otomatik ayarlanıyor:", editorDepartment);
+        setEventType(editorDepartment);
+      }
+    }
+  }, [scheduleDialogOpen, scheduleStatus, isSuperAdmin, editorDepartment, eventType]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [h, requests] = await Promise.all([
+      const [h, centersData, requests] = await Promise.all([
         getHalls(),
+        getCenters().catch(() => []),
         getRequests().catch(() => []), // Request'ler yüklenemezse boş array döndür
       ]);
       setHalls(h ?? []);
+      setCenters(centersData ?? []);
       
       // Request'leri çek (sadece Answered olanlar)
       const answeredRequests = requests.filter((r: Request) => r.status === "Answered");
@@ -232,17 +275,43 @@ export default function TakvimPage() {
   const isCurrentMonth = (d: Date) =>
     d.getMonth() === currentDate.getMonth();
 
+  // Filtrelenmiş salonlar (merkeze göre)
+  const filteredHalls = useMemo(() => {
+    if (selectedCenterId === "all") return halls;
+    return halls.filter((h) => h.centerId === selectedCenterId);
+  }, [halls, selectedCenterId]);
+
+  // Merkeze göre gruplanmış salonlar
+  const hallsByCenter = useMemo(() => {
+    if (selectedCenterId !== "all") {
+      // Belirli bir merkez seçiliyse, sadece o merkezin salonlarını göster
+      const center = centers.find((c) => c.id === selectedCenterId);
+      if (!center) return [];
+      return [{
+        center,
+        halls: filteredHalls,
+      }];
+    }
+    // Tüm merkezler için grupla
+    return centers.map((center) => ({
+      center,
+      halls: halls.filter((h) => h.centerId === center.id),
+    })).filter((g) => g.halls.length > 0);
+  }, [centers, halls, filteredHalls, selectedCenterId]);
+
   const selectedDateStr = formatDateString(selectedDate);
   const selectedDateSchedules = useMemo(() => {
-    let list = schedules.filter((s) => s.date === selectedDateStr);
-    if (selectedHall && selectedHall !== "all") {
-      const hall = halls.find((h) => h.id === selectedHall);
-      if (hall) list = list.filter((s) => s.hallName === hall.name);
-    }
-    return list.sort((a, b) =>
+    // Tarih formatını normalize et
+    return schedules.filter((s) => {
+      let sDate = s.date;
+      if (sDate.includes('T')) {
+        sDate = sDate.split('T')[0];
+      }
+      return sDate === selectedDateStr;
+    }).sort((a, b) =>
       `${a.startTime} ${a.hallName}`.localeCompare(`${b.startTime} ${b.hallName}`)
     );
-  }, [schedules, selectedDateStr, selectedHall, halls]);
+  }, [schedules, selectedDateStr]);
 
   // Saat bazlı müsaitlik durumu hesaplama
   const hourlyAvailability = useMemo(() => {
@@ -270,20 +339,22 @@ export default function TakvimPage() {
               sTime = sTime.slice(0, 5); // HH:mm
             }
             
+            // Salon ID'sine göre eşleştirme yap (isim yerine)
             return sDate === selectedDateStr &&
-                   s.hallName === hall.name &&
+                   s.weddingHallId === hall.id &&
                    sTime === timeSlot;
           }
         );
         
         if (schedule) {
-          result[timeSlot][hall.name] = {
+          // Salon ID'sine göre indeksle (isim yerine)
+          result[timeSlot][hall.id] = {
             available: schedule.status === "Available",
             schedule: schedule as ScheduleWithHall, // Event bilgileri zaten schedule'da var
           };
         } else {
           // Schedule yoksa varsayılan olarak müsait kabul et
-          result[timeSlot][hall.name] = {
+          result[timeSlot][hall.id] = {
             available: true,
           };
         }
@@ -303,9 +374,10 @@ export default function TakvimPage() {
     TIME_SLOTS.forEach((timeSlot) => {
       const slotData = hourlyAvailability[timeSlot];
       
-      // Her salon için
-      halls.forEach((hall) => {
-        const availability = slotData?.[hall.name];
+      // Filtrelenmiş salonlar için
+      filteredHalls.forEach((hall) => {
+        // Salon ID'sine göre kontrol et (isim yerine)
+        const availability = slotData?.[hall.id];
         // Tüm salonlar için slot say (schedule yoksa bile müsait kabul et)
         totalSlots++;
         if (availability?.available ?? true) {
@@ -326,7 +398,7 @@ export default function TakvimPage() {
       occupancyRate,
       availabilityRate,
     };
-  }, [hourlyAvailability, halls]);
+  }, [hourlyAvailability, filteredHalls]);
 
   const days = getDaysInMonth(currentDate);
 
@@ -335,9 +407,12 @@ export default function TakvimPage() {
     return schedules.filter((s) => s.date === ds);
   };
 
-  // Bugünkü rezervasyonlar
+  // Bugünkü rezervasyonlar (merkez filtresine göre)
   const todayStr = formatDateString(new Date());
   const todayReservations = useMemo(() => {
+    // Filtrelenmiş salonların ID'lerini al
+    const filteredHallIds = new Set(filteredHalls.map((h) => h.id));
+    
     return schedules
       .filter((s) => {
         // Tarih formatını normalize et
@@ -345,7 +420,11 @@ export default function TakvimPage() {
         if (sDate.includes('T')) {
           sDate = sDate.split('T')[0];
         }
-        return sDate === todayStr && s.status === "Reserved";
+        // Tarih kontrolü ve durum kontrolü
+        const isToday = sDate === todayStr && s.status === "Reserved";
+        // Merkez filtresine göre salon kontrolü
+        const isInFilteredHalls = filteredHallIds.has(s.weddingHallId);
+        return isToday && isInFilteredHalls;
       })
       .map((s) => ({
         ...s,
@@ -355,7 +434,7 @@ export default function TakvimPage() {
       }))
       .sort((a, b) => a.startTime.localeCompare(b.startTime))
       .slice(0, 5);
-  }, [schedules, todayStr]);
+  }, [schedules, todayStr, filteredHalls]);
 
   const getEventTypeName = (eventType?: number): string => {
     switch (eventType) {
@@ -374,6 +453,39 @@ export default function TakvimPage() {
     }
   };
 
+  // Hall'ın merkezine erişim kontrolü
+  const canAccessHallCenter = (hallId: string): boolean => {
+    if (isSuperAdmin) return true; // SuperAdmin her zaman erişebilir
+    if (!canEdit) return false; // Viewer erişemez
+    
+    // Editor ise: Hall'ın merkezine erişim izni olmalı
+    const hall = halls.find((h) => h.id === hallId);
+    if (!hall) return false;
+    
+    const center = centers.find((c) => c.id === hall.centerId);
+    if (!center) return false;
+    
+    return canAccessCenter(user?.role, user?.id, center.description);
+  };
+
+  // Editor için: Schedule'ı düzenleyebilir mi kontrolü (sadece kendi alanındaki schedule'ları düzenleyebilir)
+  const canEditSchedule = (schedule: ScheduleWithHall): boolean => {
+    if (isSuperAdmin) return true; // SuperAdmin tüm schedule'ları düzenleyebilir
+    if (!canEdit) return false; // Viewer düzenleyemez
+    
+    // Editor ise: Hall'ın merkezine erişim izni olmalı VE Schedule'ın eventType'ı Editor'ın department'ı ile eşleşmeli
+    if (!canAccessHallCenter(schedule.weddingHallId)) {
+      return false; // Merkeze erişim izni yoksa düzenleyemez
+    }
+    
+    // Editor ise: Schedule'ın eventType'ı Editor'ın department'ı ile eşleşmeli
+    if (editorDepartment !== undefined && editorDepartment !== null) {
+      return schedule.eventType === editorDepartment;
+    }
+    
+    return false; // Editor'ın department'ı yoksa düzenleyemez
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -383,18 +495,18 @@ export default function TakvimPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Takvim</h1>
-          <p className="text-sm text-muted-foreground">
+    <div className="space-y-4 sm:space-y-6 w-full">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between w-full">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-semibold text-foreground">Takvim</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Salon müsaitliklerini görüntüleyin
           </p>
         </div>
         <Button
           variant="outline"
           size="sm"
-          className="gap-2 self-start sm:self-center"
+          className="gap-2 self-start sm:self-center shrink-0"
           onClick={() => refresh()}
           disabled={loading}
         >
@@ -403,77 +515,89 @@ export default function TakvimPage() {
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-12">
+      {/* Merkez Filtresi */}
+      {centers.length > 0 && (
+        <Card className="border-border">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              <Filter className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <Label htmlFor="center-filter" className="text-xs sm:text-sm font-medium text-muted-foreground mb-1 block">
+                  Merkez Filtresi
+                </Label>
+                <Select value={selectedCenterId} onValueChange={setSelectedCenterId}>
+                  <SelectTrigger id="center-filter" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tüm Merkezler</SelectItem>
+                    {centers.map((center) => (
+                      <SelectItem key={center.id} value={center.id}>
+                        {center.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
         <div className="lg:col-span-5">
           <Card className="border-border">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-2 px-3 sm:px-6">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">
+                <CardTitle className="text-xs sm:text-sm md:text-base font-semibold">
                   {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
                 </CardTitle>
-                <div className="flex gap-1">
+                <div className="flex gap-0.5 sm:gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-7 w-7 sm:h-8 sm:w-8"
                     onClick={() => navigateMonth(-1)}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-7 w-7 sm:h-8 sm:w-8"
                     onClick={() => navigateMonth(1)}
                   >
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="mb-1 grid grid-cols-7 gap-1">
+            <CardContent className="px-2 sm:px-6">
+              <div className="mb-1 grid grid-cols-7 gap-0.5 sm:gap-1">
                 {daysOfWeek.map((day) => (
                   <div
                     key={day}
-                    className="py-2 text-center text-xs font-medium text-muted-foreground"
+                    className="py-1 sm:py-1.5 md:py-2 text-center text-[9px] sm:text-[10px] md:text-xs font-medium text-muted-foreground"
                   >
                     {day}
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
                 {days.map((day, i) => {
-                  const dayEvents = getEventsForDate(day);
-                  const hasEvents = dayEvents.length > 0;
                   return (
                     <button
                       type="button"
                       key={i}
                       onClick={() => setSelectedDate(day)}
                       className={cn(
-                        "relative aspect-square rounded-lg p-1 text-sm transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1",
+                        "relative aspect-square rounded-lg p-0.5 sm:p-1 text-xs sm:text-sm transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1",
                         !isCurrentMonth(day) && "text-muted-foreground/40",
                         isToday(day) && "bg-primary text-primary-foreground hover:bg-primary/90",
-                        isSelected(day) && !isToday(day) && "bg-secondary text-primary ring-2 ring-primary"
+                        isSelected(day) && !isToday(day) && "bg-secondary text-primary ring-1 sm:ring-2 ring-primary"
                       )}
                     >
-                      {day.getDate()}
-                      {hasEvents && !isToday(day) && (
-                        <div className="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-0.5">
-                          {dayEvents.slice(0, 3).map((_, j) => (
-                            <div
-                              key={j}
-                              className="h-1.5 w-1.5 rounded-full bg-primary"
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {hasEvents && isToday(day) && (
-                        <div className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary-foreground text-[10px] font-medium text-primary">
-                          {dayEvents.length}
-                        </div>
-                      )}
+                      <span className="text-[9px] sm:text-[10px] md:text-sm">{day.getDate()}</span>
                     </button>
                   );
                 })}
@@ -481,7 +605,7 @@ export default function TakvimPage() {
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-4 w-full bg-transparent"
+                className="mt-3 sm:mt-4 w-full bg-transparent text-xs sm:text-sm"
                 onClick={() => {
                   setSelectedDate(new Date());
                   setCurrentDate(new Date());
@@ -493,18 +617,18 @@ export default function TakvimPage() {
           </Card>
         </div>
 
-        <div className="lg:col-span-7 space-y-4">
+        <div className="lg:col-span-7 space-y-3 sm:space-y-4">
           {/* Seçilen Tarih İçin Doluluk Oranı Kartı */}
           {availabilityStats.total > 0 && (
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-2 sm:gap-3 md:gap-4 grid-cols-1 sm:grid-cols-3">
               <Card className="border-border bg-card">
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <div className="text-center">
-                    <div className="mb-2 text-3xl font-bold text-primary">
+                    <div className="mb-2 text-xl sm:text-2xl md:text-3xl font-bold text-primary">
                       %{availabilityStats.availabilityRate}
                     </div>
-                    <p className="text-xs text-muted-foreground">Müsaitlik Oranı</p>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">Müsaitlik Oranı</p>
+                    <div className="mt-2 h-1.5 sm:h-2 overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full bg-primary transition-all"
                         style={{ width: `${availabilityStats.availabilityRate}%` }}
@@ -515,92 +639,112 @@ export default function TakvimPage() {
               </Card>
               
               <Card className="border-green-200 bg-green-50">
-                <CardContent className="p-4 text-center">
-                  <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-green-600" />
-                  <div className="text-2xl font-bold text-green-700">
+                <CardContent className="p-2.5 sm:p-3 md:p-4 text-center">
+                  <CheckCircle2 className="mx-auto mb-1.5 sm:mb-2 h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-green-600" />
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold text-green-700">
                     {availabilityStats.available}
                   </div>
-                  <p className="text-xs text-green-600">Müsait</p>
+                  <p className="text-[10px] sm:text-xs text-green-600">Müsait</p>
                 </CardContent>
               </Card>
               
               <Card className="border-red-200 bg-red-50">
-                <CardContent className="p-4 text-center">
-                  <XCircle className="mx-auto mb-2 h-6 w-6 text-red-600" />
-                  <div className="text-2xl font-bold text-red-700">
+                <CardContent className="p-2.5 sm:p-3 md:p-4 text-center">
+                  <XCircle className="mx-auto mb-1.5 sm:mb-2 h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-red-600" />
+                  <div className="text-lg sm:text-xl md:text-2xl font-bold text-red-700">
                     {availabilityStats.reserved}
                   </div>
-                  <p className="text-xs text-red-600">Dolu</p>
+                  <p className="text-[10px] sm:text-xs text-red-600">Dolu</p>
                 </CardContent>
               </Card>
             </div>
           )}
 
           <Card className="border-border">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <CalendarIcon className="h-4 w-4" />
-                  {selectedDate.getDate()} {monthNames[selectedDate.getMonth()]}
-                  {availabilityStats.total > 0 && (
-                    <>
-                      <Badge variant="secondary" className="ml-1 text-xs">
-                        {availabilityStats.total} slot
-                      </Badge>
-                      <Badge variant="outline" className="ml-1 text-xs">
-                        <TrendingUp className="mr-1 h-3 w-3" />
-                        %{availabilityStats.occupancyRate} Doluluk
-                      </Badge>
-                    </>
-                  )}
+            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6">
+              <div className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-sm sm:text-base font-semibold">
+                  <CalendarIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span>{selectedDate.getDate()} {monthNames[selectedDate.getMonth()]}</span>
                 </CardTitle>
-                <Select value={selectedHall} onValueChange={setSelectedHall}>
-                  <SelectTrigger className="h-9 w-full text-sm sm:w-[180px]">
-                    <SelectValue placeholder="Tüm Salonlar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tüm Salonlar</SelectItem>
-                    {halls.map((hall) => (
-                      <SelectItem key={hall.id} value={hall.id}>
-                        {hall.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             </CardHeader>
-            <CardContent>
-              {halls.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                    <CalendarIcon className="h-6 w-6 text-muted-foreground" />
+            <CardContent className="px-0 sm:px-6">
+              {filteredHalls.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-center px-4">
+                  <div className="mb-2 sm:mb-3 flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-muted">
+                    <CalendarIcon className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
                   </div>
-                  <p className="text-sm font-medium text-foreground">
-                    Salon Bulunamadı
+                  <p className="text-xs sm:text-sm font-medium text-foreground">
+                    {selectedCenterId === "all" ? "Salon Bulunamadı" : "Bu merkezde salon bulunamadı"}
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
-                          Saat
-                        </th>
-                        {halls.map((hall) => (
-                          <th
-                            key={hall.id}
-                            className="px-4 py-3 text-center text-sm font-semibold text-foreground min-w-[120px]"
-                          >
-                            {hall.name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {TIME_SLOTS.map((timeSlot) => {
-                        const hasAnySchedule = halls.some(
-                          (hall) => hourlyAvailability[timeSlot]?.[hall.name]?.schedule
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <div className="inline-block min-w-full align-middle px-2 sm:px-0">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        {selectedCenterId === "all" ? (
+                          // Tüm merkezler seçiliyse, merkezlere göre grupla
+                          <>
+                            {/* Merkez başlık satırı */}
+                            <tr className="border-b border-border bg-primary/5">
+                              <th className="sticky left-0 z-30 bg-primary/5 border-r border-border px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-3 text-left text-[10px] sm:text-xs md:text-sm font-semibold text-foreground">
+                              </th>
+                              {hallsByCenter.map(({ center, halls: centerHalls }) => (
+                                <th
+                                  key={`center-header-${center.id}`}
+                                  colSpan={centerHalls.length}
+                                  className="px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 text-center text-[10px] sm:text-xs md:text-sm font-semibold text-foreground border-l-2 border-primary"
+                                >
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Building2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                                    <span>{center.name}</span>
+                                    <Badge variant="secondary" className="text-[9px]">
+                                      {centerHalls.length} Salon
+                                    </Badge>
+                                  </div>
+                                </th>
+                              ))}
+                            </tr>
+                            {/* Salon başlık satırı */}
+                            <tr className="border-b border-border">
+                              <th className="sticky left-0 z-30 bg-card border-r border-border px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-3 text-left text-[10px] sm:text-xs md:text-sm font-semibold text-foreground">
+                                Saat
+                              </th>
+                              {hallsByCenter.flatMap(({ halls: centerHalls }) =>
+                                centerHalls.map((hall) => (
+                                  <th
+                                    key={hall.id}
+                                    className="px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 text-center text-[10px] sm:text-xs md:text-sm font-semibold text-foreground min-w-[140px] sm:min-w-[160px] md:min-w-[200px]"
+                                  >
+                                    <span className="break-words whitespace-normal" title={hall.name}>{hall.name}</span>
+                                  </th>
+                                ))
+                              )}
+                            </tr>
+                          </>
+                        ) : (
+                          // Belirli bir merkez seçiliyse, sadece o merkezin salonlarını göster
+                          <tr className="border-b border-border">
+                            <th className="sticky left-0 z-30 bg-card border-r border-border px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 md:py-3 text-left text-[10px] sm:text-xs md:text-sm font-semibold text-foreground">
+                              Saat
+                            </th>
+                            {filteredHalls.map((hall) => (
+                              <th
+                                key={hall.id}
+                                className="px-1.5 sm:px-2 md:px-4 py-1.5 sm:py-2 md:py-3 text-center text-[10px] sm:text-xs md:text-sm font-semibold text-foreground min-w-[140px] sm:min-w-[160px] md:min-w-[200px]"
+                              >
+                                <span className="break-words whitespace-normal" title={hall.name}>{hall.name}</span>
+                              </th>
+                            ))}
+                          </tr>
+                        )}
+                      </thead>
+                      <tbody>
+                        {TIME_SLOTS.map((timeSlot) => {
+                        const hasAnySchedule = filteredHalls.some(
+                          (hall) => hourlyAvailability[timeSlot]?.[hall.id]?.schedule
                         );
                         
                         return (
@@ -608,76 +752,199 @@ export default function TakvimPage() {
                             key={timeSlot}
                             className="border-b border-border hover:bg-muted/50 transition-colors"
                           >
-                            <td className="px-4 py-3 text-sm font-medium text-foreground">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                {timeSlot}
+                            <td className="sticky left-0 z-10 bg-card border-r border-border px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-foreground">
+                              <div className="flex items-center gap-1 sm:gap-2">
+                                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                                <span>{timeSlot}</span>
                               </div>
                             </td>
-                            {halls.map((hall) => {
-                              const availability = hourlyAvailability[timeSlot]?.[hall.name];
-                              
-                              // Schedule yoksa varsayılan olarak müsait göster
-                              const isAvailable = availability?.available ?? true;
-                              const schedule = availability?.schedule;
-                              
-                              const scheduleWithHall = schedule as ScheduleWithHall | undefined;
-                              
-                              const handleCellClick = () => {
-                                // Sadece editor için müsait kısımlara tıklayınca düzenleme dialog'u aç
-                                if (isEditor && isAvailable) {
-                                  setSelectedTimeSlot(timeSlot);
-                                  setSelectedHallForSchedule(hall.id);
-                                  setScheduleStatus(scheduleWithHall?.status === "Reserved" ? "Available" : "Reserved");
-                                  setScheduleDialogOpen(true);
-                                }
-                                // Dolu kısımlara tıklayınca hiçbir şey yapma
-                              };
-                              
-                              // Etkinlik adını al (varsa)
-                              const eventName = scheduleWithHall?.eventName;
-                              const displayText = isAvailable ? "Müsait" : (eventName || "Dolu");
-                              
-                              return (
-                                <td
-                                  key={hall.id}
-                                  className={cn(
-                                    "px-4 py-3 text-center",
-                                    isEditor && isAvailable && "cursor-pointer hover:bg-muted/30"
-                                  )}
-                                  onClick={handleCellClick}
-                                >
-                                  <div
-                                    className={cn(
-                                      "inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                                      isAvailable
-                                        ? "bg-green-100 text-green-700 border border-green-200"
-                                        : "bg-red-100 text-red-700 border border-red-200"
-                                    )}
-                                    title={!isAvailable && scheduleWithHall ? `${eventName || "Dolu"}` : undefined}
+                            {selectedCenterId === "all" ? (
+                              // Tüm merkezler seçiliyse, merkezlere göre grupla
+                              hallsByCenter.flatMap(({ halls: centerHalls }) =>
+                                centerHalls.map((hall) => {
+                                  // Salon ID'sine göre kontrol et (isim yerine)
+                                  const availability = hourlyAvailability[timeSlot]?.[hall.id];
+                                  
+                                  // Schedule yoksa varsayılan olarak müsait göster
+                                  const isAvailable = availability?.available ?? true;
+                                  const schedule = availability?.schedule;
+                                  
+                                  const scheduleWithHall = schedule as ScheduleWithHall | undefined;
+                                  
+                                  const handleCellClick = () => {
+                                    // Merkez erişim kontrolü
+                                    const hasAccess = canAccessHallCenter(hall.id);
+                                    
+                                    if (hasAccess && isAvailable) {
+                                      // Editor/SuperAdmin için müsait kısımlara tıklayınca düzenleme dialog'u aç
+                                      setSelectedTimeSlot(timeSlot);
+                                      setSelectedHallForSchedule(hall.id);
+                                      // Mevcut schedule varsa bilgilerini yükle
+                                      if (scheduleWithHall) {
+                                        setScheduleStatus(scheduleWithHall.status);
+                                        setEventType(scheduleWithHall.eventType);
+                                        setEventName(scheduleWithHall.eventName || "");
+                                        setEventOwner(scheduleWithHall.eventOwner || "");
+                                      } else {
+                                        // Yeni schedule için varsayılan değerler
+                                        setScheduleStatus("Reserved");
+                                        setEventName("");
+                                        setEventOwner("");
+                                        // Editor ise department'ını otomatik ayarla
+                                        if (!isSuperAdmin && editorDepartment !== undefined && editorDepartment !== null) {
+                                          console.log("Setting eventType to editorDepartment:", editorDepartment);
+                                          setEventType(editorDepartment);
+                                        } else {
+                                          setEventType(undefined);
+                                        }
+                                      }
+                                      setScheduleDialogOpen(true);
+                                    } else if (!isAvailable && scheduleWithHall) {
+                                      // Dolu kısımlara tıklayınca detay dialog'u aç (düzenleme/silme butonları dialog içinde)
+                                      setSelectedSchedule(scheduleWithHall);
+                                      setDetailDialogOpen(true);
+                                    } else if (!hasAccess && isAvailable) {
+                                      // Erişim izni yoksa uyarı göster
+                                      toast.error("Bu merkeze erişim yetkiniz bulunmamaktadır.");
+                                    }
+                                  };
+                                  
+                                  // Etkinlik adını al (varsa)
+                                  const eventName = scheduleWithHall?.eventName;
+                                  const displayText = isAvailable ? "Müsait" : (eventName || "Dolu");
+                                  
+                                  return (
+                                    <td
+                                      key={hall.id}
+                                      className={cn(
+                                        "px-1 sm:px-2 md:px-4 py-2 sm:py-3 text-center",
+                                        (canAccessHallCenter(hall.id) && isAvailable) || (!isAvailable && scheduleWithHall) ? "cursor-pointer hover:bg-muted/30" : ""
+                                      )}
+                                      onClick={handleCellClick}
+                                    >
+                                      <div
+                                        className={cn(
+                                          "inline-flex items-center justify-center rounded-lg px-1.5 sm:px-2 md:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium transition-colors",
+                                          isAvailable
+                                            ? "bg-green-100 text-green-700 border border-green-200"
+                                            : "bg-red-100 text-red-700 border border-red-200"
+                                        )}
+                                        title={!isAvailable && scheduleWithHall ? `${eventName || "Dolu"}` : undefined}
+                                      >
+                                        {isAvailable ? (
+                                          <>
+                                            <CheckCircle2 className="mr-0.5 sm:mr-1.5 h-2.5 w-2.5 sm:h-3.5 sm:w-3.5 shrink-0" />
+                                            <span className="hidden sm:inline">{displayText}</span>
+                                            <span className="sm:hidden">M</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <XCircle className="mr-0.5 sm:mr-1.5 h-2.5 w-2.5 sm:h-3.5 sm:w-3.5 shrink-0" />
+                                            <span className="truncate max-w-[60px] sm:max-w-[100px]" title={eventName || "Dolu"}>
+                                              <span className="hidden sm:inline">{displayText}</span>
+                                              <span className="sm:hidden">D</span>
+                                            </span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                  );
+                                })
+                              )
+                            ) : (
+                              // Belirli bir merkez seçiliyse, sadece o merkezin salonlarını göster
+                              filteredHalls.map((hall) => {
+                                // Salon ID'sine göre kontrol et (isim yerine)
+                                const availability = hourlyAvailability[timeSlot]?.[hall.id];
+                                
+                                // Schedule yoksa varsayılan olarak müsait göster
+                                const isAvailable = availability?.available ?? true;
+                                const schedule = availability?.schedule;
+                                
+                                const scheduleWithHall = schedule as ScheduleWithHall | undefined;
+                                
+                                const handleCellClick = () => {
+                                  if (canEdit && isAvailable) {
+                                    // Editor/SuperAdmin için müsait kısımlara tıklayınca düzenleme dialog'u aç
+                                    setSelectedTimeSlot(timeSlot);
+                                    setSelectedHallForSchedule(hall.id);
+                                    // Mevcut schedule varsa bilgilerini yükle
+                                    if (scheduleWithHall) {
+                                      setScheduleStatus(scheduleWithHall.status);
+                                      setEventType(scheduleWithHall.eventType);
+                                      setEventName(scheduleWithHall.eventName || "");
+                                      setEventOwner(scheduleWithHall.eventOwner || "");
+                                    } else {
+                                      // Yeni schedule için varsayılan değerler
+                                      setScheduleStatus("Reserved");
+                                      setEventName("");
+                                      setEventOwner("");
+                                      // Editor ise department'ını otomatik ayarla
+                                      if (!isSuperAdmin && editorDepartment !== undefined && editorDepartment !== null) {
+                                        console.log("Setting eventType to editorDepartment:", editorDepartment);
+                                        setEventType(editorDepartment);
+                                      } else {
+                                        setEventType(undefined);
+                                      }
+                                    }
+                                    setScheduleDialogOpen(true);
+                                  } else if (!isAvailable && scheduleWithHall) {
+                                    // Dolu kısımlara tıklayınca detay dialog'u aç (düzenleme/silme butonları dialog içinde)
+                                    setSelectedSchedule(scheduleWithHall);
+                                    setDetailDialogOpen(true);
+                                  }
+                                };
+                                
+                                // Etkinlik adını al (varsa)
+                                const eventName = scheduleWithHall?.eventName;
+                                const displayText = isAvailable ? "Müsait" : (eventName || "Dolu");
+                                
+                                return (
+                                  <td
+                                    key={hall.id}
+                                      className={cn(
+                                        "px-1 sm:px-2 md:px-4 py-2 sm:py-3 text-center",
+                                        (canAccessHallCenter(hall.id) && isAvailable) || (!isAvailable && scheduleWithHall) ? "cursor-pointer hover:bg-muted/30" : ""
+                                      )}
+                                    onClick={handleCellClick}
                                   >
-                                    {isAvailable ? (
-                                      <>
-                                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                        {displayText}
-                                      </>
-                                    ) : (
-                                      <>
-                                        <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                                        <span className="truncate max-w-[100px]" title={eventName || "Dolu"}>{displayText}</span>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                              );
-                            })}
+                                    <div
+                                      className={cn(
+                                        "inline-flex items-center justify-center rounded-lg px-1.5 sm:px-2 md:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium transition-colors",
+                                        isAvailable
+                                          ? "bg-green-100 text-green-700 border border-green-200"
+                                          : "bg-red-100 text-red-700 border border-red-200"
+                                      )}
+                                      title={!isAvailable && scheduleWithHall ? `${eventName || "Dolu"}` : undefined}
+                                    >
+                                      {isAvailable ? (
+                                        <>
+                                          <CheckCircle2 className="mr-0.5 sm:mr-1.5 h-2.5 w-2.5 sm:h-3.5 sm:w-3.5 shrink-0" />
+                                          <span className="hidden sm:inline">{displayText}</span>
+                                          <span className="sm:hidden">M</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <XCircle className="mr-0.5 sm:mr-1.5 h-2.5 w-2.5 sm:h-3.5 sm:w-3.5 shrink-0" />
+                                          <span className="truncate max-w-[60px] sm:max-w-[100px]" title={eventName || "Dolu"}>
+                                            <span className="hidden sm:inline">{displayText}</span>
+                                            <span className="sm:hidden">D</span>
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                );
+                              })
+                            )}
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
+                  </div>
                   
-                  {availabilityStats.total === 0 && halls.length > 0 && (
+                  {availabilityStats.total === 0 && filteredHalls.length > 0 && (
                     <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
                       <p className="text-xs text-green-800 text-center">
                         Bu tarihte henüz müsaitlik kaydı oluşturulmamış. Tüm salonlar varsayılan olarak müsait gösterilmektedir.
@@ -691,10 +958,20 @@ export default function TakvimPage() {
         </div>
       </div>
 
-      {/* Schedule Düzenleme Dialog'u (Editor için) */}
-      {isEditor && (
-        <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
-          <DialogContent>
+      {/* Schedule Düzenleme Dialog'u (Editor ve SuperAdmin için) */}
+      {canEdit && (
+        <Dialog open={scheduleDialogOpen} onOpenChange={(open) => {
+          setScheduleDialogOpen(open);
+          // Form kapanırken state'i temizle
+          if (!open) {
+            setEventType(undefined);
+            setEventName("");
+            setEventOwner("");
+            setSelectedTimeSlot("");
+            setSelectedHallForSchedule("");
+          }
+        }}>
+          <DialogContent className="max-w-[95vw] sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Müsaitlik Düzenle</DialogTitle>
               <DialogDescription>
@@ -704,18 +981,31 @@ export default function TakvimPage() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Salon</Label>
-                <Select value={selectedHallForSchedule} onValueChange={setSelectedHallForSchedule}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Salon seçin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {halls.map((hall) => (
-                      <SelectItem key={hall.id} value={hall.id}>
-                        {hall.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {selectedHallForSchedule ? (() => {
+                  const selectedHall = halls.find((h) => h.id === selectedHallForSchedule);
+                  const center = selectedHall ? centers.find((c) => c.id === selectedHall.centerId) : null;
+                  return (
+                    <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="font-medium">{center?.name ?? "—"}</span>
+                      <span className="text-muted-foreground">–</span>
+                      <span>{selectedHall?.name ?? "—"}</span>
+                    </div>
+                  );
+                })() : (
+                  <Select value={selectedHallForSchedule} onValueChange={setSelectedHallForSchedule}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Salon seçin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {halls.map((hall) => (
+                        <SelectItem key={hall.id} value={hall.id}>
+                          {hall.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Tarih</Label>
@@ -733,7 +1023,20 @@ export default function TakvimPage() {
                 <Label>Durum</Label>
                 <Select
                   value={scheduleStatus}
-                  onValueChange={(value: "Available" | "Reserved") => setScheduleStatus(value)}
+                  onValueChange={(value: "Available" | "Reserved") => {
+                    setScheduleStatus(value);
+                    // Müsait seçilirse etkinlik bilgilerini temizle
+                    if (value === "Available") {
+                      setEventType(undefined);
+                      setEventName("");
+                      setEventOwner("");
+                    } else {
+                      // Dolu seçilirse Editor için department'ını otomatik ayarla
+                      if (!isSuperAdmin && editorDepartment !== undefined) {
+                        setEventType(editorDepartment);
+                      }
+                    }
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -744,11 +1047,68 @@ export default function TakvimPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Dolu seçildiğinde etkinlik bilgileri */}
+              {scheduleStatus === "Reserved" && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Etkinlik Tipi *</Label>
+                    {isSuperAdmin ? (
+                      <Select
+                        value={eventType?.toString() ?? ""}
+                        onValueChange={(value) => setEventType(parseInt(value))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Etkinlik tipi seçin" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">Nikah</SelectItem>
+                          <SelectItem value="1">Nişan</SelectItem>
+                          <SelectItem value="2">Konser</SelectItem>
+                          <SelectItem value="3">Toplantı</SelectItem>
+                          <SelectItem value="4">Özel</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                        {editorDepartment === 0 && "Nikah"}
+                        {editorDepartment === 1 && "Nişan"}
+                        {editorDepartment === 2 && "Konser"}
+                        {editorDepartment === 3 && "Toplantı"}
+                        {editorDepartment === 4 && "Özel"}
+                        {(editorDepartment === undefined || editorDepartment === null) && "Belirtilmemiş"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Etkinlik Adı *</Label>
+                    <Input
+                      placeholder="Örn: Düğün Töreni"
+                      value={eventName}
+                      onChange={(e) => setEventName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Etkinlik Sahibi/Kişi Adı *</Label>
+                    <Input
+                      placeholder="Örn: Ahmet Yılmaz"
+                      value={eventOwner}
+                      onChange={(e) => setEventOwner(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={() => setScheduleDialogOpen(false)}
+                onClick={() => {
+                  // Formu temizle
+                  setEventType(undefined);
+                  setEventName("");
+                  setEventOwner("");
+                  setScheduleDialogOpen(false);
+                }}
               >
                 İptal
               </Button>
@@ -757,6 +1117,31 @@ export default function TakvimPage() {
                   if (!selectedHallForSchedule || !selectedTimeSlot) {
                     toast.error("Lütfen salon seçin");
                     return;
+                  }
+
+                  // Erişim kontrolü - form açılmadan önce (burada tekrar kontrol ediyoruz çünkü form açıldıktan sonra salon değişmiş olabilir)
+                  if (!canAccessHallCenter(selectedHallForSchedule)) {
+                    toast.error("Bu merkeze erişim yetkiniz bulunmamaktadır.");
+                    setScheduleDialogOpen(false);
+                    return;
+                  }
+
+                  // Dolu schedule'lar için etkinlik bilgileri zorunlu
+                  if (scheduleStatus === "Reserved") {
+                    // EventType: SuperAdmin için seçilmiş olmalı, Editor için department otomatik
+                    const finalEventType = isSuperAdmin ? eventType : editorDepartment;
+                    if (finalEventType === undefined && finalEventType !== 0) {
+                      toast.error("Lütfen etkinlik tipi seçin");
+                      return;
+                    }
+                    if (!eventName.trim()) {
+                      toast.error("Lütfen etkinlik adı girin");
+                      return;
+                    }
+                    if (!eventOwner.trim()) {
+                      toast.error("Lütfen etkinlik sahibi adı girin");
+                      return;
+                    }
                   }
 
                   try {
@@ -772,12 +1157,57 @@ export default function TakvimPage() {
                       ? TIME_SLOTS[timeIndex + 1] 
                       : "18:00";
 
+                    // Frontend'de çakışma kontrolü (kullanıcıya daha hızlı geri bildirim için)
+                    const startTimeStr = `${selectedTimeSlot}:00`;
+                    const endTimeStr = `${endTime}:00`;
+                    
+                    const conflictingSchedule = schedules.find((s) => {
+                      if (s.weddingHallId !== selectedHallForSchedule || s.date !== selectedDateStr) {
+                        return false;
+                      }
+                      // Mevcut schedule'ı güncelliyorsak onu hariç tut
+                      const existingSchedule = schedules.find(
+                        (s) =>
+                          s.weddingHallId === selectedHallForSchedule &&
+                          s.date === selectedDateStr &&
+                          s.startTime.startsWith(selectedTimeSlot)
+                      );
+                      if (existingSchedule && s.id === existingSchedule.id) {
+                        return false;
+                      }
+                      // Çakışma kontrolü
+                      const startMinutes = toMinutes(startTimeStr);
+                      const endMinutes = toMinutes(endTimeStr);
+                      const sStartMinutes = toMinutes(s.startTime);
+                      const sEndMinutes = toMinutes(s.endTime);
+                      return startMinutes < sEndMinutes && endMinutes > sStartMinutes;
+                    });
+
+                    if (conflictingSchedule) {
+                      const conflictType = conflictingSchedule.eventType !== undefined 
+                        ? getEventTypeName(conflictingSchedule.eventType) 
+                        : "Etkinlik";
+                      toast.error(
+                        `Bu saat aralığında zaten bir ${conflictType} rezervasyonu var. ` +
+                        `(${conflictingSchedule.eventName || "Etkinlik"})`
+                      );
+                      return;
+                    }
+
+                    // EventType: SuperAdmin için seçilen değer, Editor için department
+                    const finalEventType = scheduleStatus === "Reserved" 
+                      ? (isSuperAdmin ? eventType : editorDepartment)
+                      : undefined;
+
                     const scheduleData: UpdateScheduleData = {
                       weddingHallId: selectedHallForSchedule,
                       date: selectedDateStr,
-                      startTime: `${selectedTimeSlot}:00`,
-                      endTime: `${endTime}:00`,
+                      startTime: startTimeStr,
+                      endTime: endTimeStr,
                       status: scheduleStatus,
+                      eventType: finalEventType,
+                      eventName: scheduleStatus === "Reserved" ? eventName.trim() : undefined,
+                      eventOwner: scheduleStatus === "Reserved" ? eventOwner.trim() : undefined,
                     };
 
                     // Mevcut schedule var mı kontrol et
@@ -789,15 +1219,41 @@ export default function TakvimPage() {
                     );
 
                     if (existingSchedule) {
-                      // Güncelle
+                      // Mevcut schedule'ı güncelle
+                      const existingScheduleWithHall = existingSchedule as ScheduleWithHall;
+                      
+                      // Eğer schedule "Reserved" durumundaysa ve eventType varsa, Editor için eventType kontrolü yap
+                      if (existingScheduleWithHall.status === "Reserved" && existingScheduleWithHall.eventType !== undefined && existingScheduleWithHall.eventType !== null) {
+                        // Editor için: Sadece kendi alanındaki schedule'ları güncelleyebilir
+                        // SuperAdmin tüm schedule'ları güncelleyebilir
+                        if (!canEditSchedule(existingScheduleWithHall)) {
+                          // Editor'ın kendi alanında değilse hata ver
+                          toast.error("Bu etkinliği düzenleme yetkiniz bulunmamaktadır. Sadece kendi alanınızdaki etkinlikleri düzenleyebilirsiniz.");
+                          setScheduleDialogOpen(false);
+                          return;
+                        }
+                      } else {
+                        // "Available" schedule'lar veya eventType olmayan schedule'lar için sadece merkez erişim kontrolü yap
+                        if (!canAccessHallCenter(selectedHallForSchedule)) {
+                          toast.error("Bu merkeze erişim yetkiniz bulunmamaktadır.");
+                          setScheduleDialogOpen(false);
+                          return;
+                        }
+                      }
+                      
+                      // Düzenleme yetkisi varsa güncelle
                       await updateSchedule(existingSchedule.id, scheduleData);
                       toast.success("Müsaitlik güncellendi");
                     } else {
-                      // Yeni oluştur
+                      // Yeni oluştur - sadece merkez erişim kontrolü yapıldı (1099. satırda)
                       await createSchedule(scheduleData);
                       toast.success("Müsaitlik oluşturuldu");
                     }
 
+                    // Formu temizle
+                    setEventType(undefined);
+                    setEventName("");
+                    setEventOwner("");
                     await refresh();
                     setScheduleDialogOpen(false);
                   } catch (e) {
@@ -814,7 +1270,7 @@ export default function TakvimPage() {
 
       {/* Detay Dialog'u */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Rezervasyon Detayları</DialogTitle>
             <DialogDescription>
@@ -869,13 +1325,119 @@ export default function TakvimPage() {
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            {selectedSchedule && canEditSchedule(selectedSchedule as ScheduleWithHall) && (
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    if (!selectedSchedule) return;
+                    
+                    // Erişim kontrolü - form açılmadan önce
+                    const scheduleWithHall = selectedSchedule as ScheduleWithHall;
+                    if (!canEditSchedule(scheduleWithHall)) {
+                      toast.error("Bu rezervasyonu düzenleme yetkiniz bulunmamaktadır. Sadece kendi departmanınıza ait rezervasyonları düzenleyebilirsiniz.");
+                      return;
+                    }
+                    
+                    // Merkez erişim kontrolü
+                    if (!canAccessHallCenter(selectedSchedule.weddingHallId)) {
+                      toast.error("Bu merkeze erişim yetkiniz bulunmamaktadır.");
+                      return;
+                    }
+                    
+                    // Düzenleme için mevcut bilgileri yükle
+                    setSelectedTimeSlot(selectedSchedule.startTime.slice(0, 5));
+                    setSelectedHallForSchedule(selectedSchedule.weddingHallId);
+                    setScheduleStatus(selectedSchedule.status);
+                    setEventType(scheduleWithHall.eventType);
+                    setEventName(scheduleWithHall.eventName || "");
+                    setEventOwner(scheduleWithHall.eventOwner || "");
+                    setDetailDialogOpen(false);
+                    setScheduleDialogOpen(true);
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Düzenle
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    if (!selectedSchedule) return;
+                    setScheduleToDelete(selectedSchedule);
+                    setDetailDialogOpen(false);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Sil
+                </Button>
+              </>
+            )}
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => setDetailDialogOpen(false)}>
               Kapat
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Silme Onay Dialog'u */}
+      {canEdit && (
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent className="max-w-[95vw] sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Rezervasyonu Sil</DialogTitle>
+              <DialogDescription>
+                Bu rezervasyonu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+              </DialogDescription>
+            </DialogHeader>
+            {scheduleToDelete && (
+              <div className="space-y-2 py-4">
+                <div className="rounded-md border border-border bg-muted p-3">
+                  <p className="text-sm font-medium">
+                    {(scheduleToDelete as ScheduleWithHall).eventName || "Etkinlik Adı Yok"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {scheduleToDelete.hallName} • {scheduleToDelete.date} • {formatTimeRange(scheduleToDelete)}
+                  </p>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setDeleteDialogOpen(false);
+                setScheduleToDelete(null);
+              }}>
+                İptal
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  if (!scheduleToDelete) return;
+                  try {
+                    await deleteSchedule(scheduleToDelete.id);
+                    toast.success("Rezervasyon silindi");
+                    setDeleteDialogOpen(false);
+                    const deletedId = scheduleToDelete.id;
+                    setScheduleToDelete(null);
+                    // Silinen schedule'ı state'den de kaldır (hemen güncelleme için)
+                    setSchedules((prev) => prev.filter((s) => s.id !== deletedId));
+                    // Backend'den yeniden yükle
+                    await refresh();
+                  } catch (e) {
+                    toast.error(toUserFriendlyMessage(e));
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Sil
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Bugünkü Rezervasyonlar */}
       {todayReservations.length > 0 && (
@@ -908,18 +1470,63 @@ export default function TakvimPage() {
                     <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200">
                       Dolu
                     </Badge>
-                    {!isViewerRole(user?.role) && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedSchedule(reservation);
-                          setDetailDialogOpen(true);
-                        }}
-                      >
-                        Detay
-                      </Button>
+                    {canEditSchedule(reservation as ScheduleWithHall) && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const reservationWithHall = reservation as ScheduleWithHall;
+                            
+                            // Erişim kontrolü - form açılmadan önce
+                            if (!canEditSchedule(reservationWithHall)) {
+                              toast.error("Bu rezervasyonu düzenleme yetkiniz bulunmamaktadır. Sadece kendi departmanınıza ait rezervasyonları düzenleyebilirsiniz.");
+                              return;
+                            }
+                            
+                            // Merkez erişim kontrolü
+                            if (!canAccessHallCenter(reservation.weddingHallId)) {
+                              toast.error("Bu merkeze erişim yetkiniz bulunmamaktadır.");
+                              return;
+                            }
+                            
+                            setSelectedSchedule(reservation);
+                            setSelectedTimeSlot(reservation.startTime.slice(0, 5));
+                            setSelectedHallForSchedule(reservation.weddingHallId);
+                            setScheduleStatus(reservation.status);
+                            setEventType(reservationWithHall.eventType);
+                            setEventName(reservationWithHall.eventName || "");
+                            setEventOwner(reservationWithHall.eventOwner || "");
+                            setDetailDialogOpen(false);
+                            setScheduleDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Düzenle
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setScheduleToDelete(reservation);
+                            setDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Sil
+                        </Button>
+                      </>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedSchedule(reservation);
+                        setDetailDialogOpen(true);
+                      }}
+                    >
+                      Detay
+                    </Button>
                   </div>
                 </div>
               ))}

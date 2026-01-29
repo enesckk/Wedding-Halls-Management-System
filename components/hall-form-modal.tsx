@@ -20,6 +20,14 @@ import type { WeddingHall } from "@/lib/types";
 import { toUserFriendlyMessage } from "@/lib/utils/api-error";
 import { toast } from "sonner";
 import { Image as ImageIcon, Upload, X } from "lucide-react";
+import { getCenters, type Center } from "@/lib/api/centers";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Mode = "create" | "update";
 
@@ -28,16 +36,20 @@ interface HallFormModalProps {
   onOpenChange: (open: boolean) => void;
   mode: Mode;
   initialHall?: WeddingHall | null;
+  /** Merkez detaydan salon eklerken bu merkezi önceden seçili getir */
+  initialCenterId?: string;
   onSuccess: (hall: WeddingHall) => void | Promise<void>;
 }
 
 const emptyForm: CreateHallData = {
+  centerId: "",
   name: "",
   address: "",
   capacity: 0,
   description: "",
   imageUrl: "",
   technicalDetails: "",
+  allowedUserIds: [],
 };
 
 // Nikah salonu için teknik detay seçenekleri
@@ -69,6 +81,7 @@ export function HallFormModal({
   onOpenChange,
   mode,
   initialHall,
+  initialCenterId,
   onSuccess,
 }: HallFormModalProps) {
   const [form, setForm] = useState<CreateHallData>(emptyForm);
@@ -76,6 +89,7 @@ export function HallFormModal({
   const [imagePreview, setImagePreview] = useState<string>("");
   const [selectedTechnicalDetails, setSelectedTechnicalDetails] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [centers, setCenters] = useState<Center[]>([]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -216,23 +230,35 @@ export function HallFormModal({
     return labels.join(", ");
   };
 
+  // Merkezleri yükle
+  useEffect(() => {
+    if (open) {
+      getCenters().then(setCenters).catch(() => setCenters([]));
+    }
+  }, [open]);
+
   useEffect(() => {
     if (open) {
       if (mode === "update" && initialHall) {
         setForm({
+          centerId: initialHall.centerId || "",
           name: initialHall.name,
           address: initialHall.address,
           capacity: initialHall.capacity,
           description: initialHall.description,
           imageUrl: initialHall.imageUrl || "",
           technicalDetails: initialHall.technicalDetails || "",
+          allowedUserIds: [],
         });
         setImagePreview(initialHall.imageUrl || "");
         // Mevcut teknik detayları parse et
         const existingDetails = parseTechnicalDetails(initialHall.technicalDetails || "");
         setSelectedTechnicalDetails(existingDetails);
       } else {
-        setForm(emptyForm);
+        setForm({
+          ...emptyForm,
+          centerId: initialCenterId ?? "",
+        });
         setImagePreview("");
         setSelectedTechnicalDetails(new Set());
       }
@@ -240,7 +266,7 @@ export function HallFormModal({
         fileInputRef.current.value = "";
       }
     }
-  }, [open, mode, initialHall]);
+  }, [open, mode, initialHall, initialCenterId]);
 
   const handleTechnicalDetailToggle = (detailId: string) => {
     const newSelected = new Set(selectedTechnicalDetails);
@@ -280,7 +306,14 @@ export function HallFormModal({
     const finalForm = {
       ...form,
       technicalDetails: formatTechnicalDetails(selectedTechnicalDetails),
+      allowedUserIds: [], // Erişim izinleri merkez seviyesinde yönetiliyor
     };
+
+    // CenterId kontrolü
+    if (!finalForm.centerId) {
+      toast.error("Lütfen bir merkez seçin.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -318,6 +351,24 @@ export function HallFormModal({
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6">
             <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="hall-center">Merkez *</Label>
+            <Select
+              value={form.centerId}
+              onValueChange={(value) => setForm((p) => ({ ...p, centerId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Merkez seçin" />
+              </SelectTrigger>
+              <SelectContent>
+                {centers.map((center) => (
+                  <SelectItem key={center.id} value={center.id}>
+                    {center.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="hall-name">Ad</Label>
             <Input
