@@ -24,8 +24,16 @@ public static class DependencyInjection
             throw new InvalidOperationException("ConnectionStrings:DefaultConnection or CONNECTION_STRING must be set.");
         }
 
+        var provider = configuration["DatabaseProvider"] ?? "Postgres";
+        var useSqlServer = string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase);
+
         services.AddDbContext<AppDbContext>(o =>
-            o.UseNpgsql(conn));
+        {
+            if (useSqlServer)
+                o.UseSqlServer(conn);
+            else
+                o.UseNpgsql(conn);
+        });
 
         services.AddIdentityCore<ApplicationUser>(o =>
         {

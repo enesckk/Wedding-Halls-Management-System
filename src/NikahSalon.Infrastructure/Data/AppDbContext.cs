@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NikahSalon.Domain.Entities;
 using NikahSalon.Infrastructure.Identity;
 
@@ -8,7 +9,14 @@ namespace NikahSalon.Infrastructure.Data;
 
 public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    private static readonly ValueConverter<DateTime, DateTimeOffset> DateTimeToOffsetConverter =
+        new(d => new DateTimeOffset(d.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : d), dto => dto.UtcDateTime);
+
+    private readonly DbContextOptions<AppDbContext> _options;
+
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) => _options = options;
+
+    private bool IsSqlServer => _options.Extensions.Any(e => e.GetType().Namespace?.Contains("SqlServer") == true);
 
     public DbSet<Center> Centers => Set<Center>();
     public DbSet<WeddingHall> WeddingHalls => Set<WeddingHall>();
@@ -30,6 +38,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             e.Property(x => x.Description).HasMaxLength(2000).IsRequired();
             e.Property(x => x.ImageUrl).HasColumnType("TEXT");
             e.Property(x => x.CreatedAt).IsRequired();
+            if (IsSqlServer) e.Property(x => x.CreatedAt).HasConversion(DateTimeToOffsetConverter);
         });
 
         builder.Entity<WeddingHall>(e =>
@@ -58,6 +67,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             e.Property(x => x.HallId).IsRequired();
             e.Property(x => x.UserId).IsRequired();
             e.Property(x => x.CreatedAt).IsRequired();
+            if (IsSqlServer) e.Property(x => x.CreatedAt).HasConversion(DateTimeToOffsetConverter);
             
             // Unique constraint: Bir kullanıcı bir salona sadece bir kez erişim hakkı alabilir
             e.HasIndex(x => new { x.HallId, x.UserId }).IsUnique();
@@ -91,6 +101,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             e.HasKey(x => x.Id);
             e.Property(x => x.Message).HasMaxLength(2000).IsRequired();
             e.Property(x => x.CreatedAt).IsRequired();
+            if (IsSqlServer) e.Property(x => x.CreatedAt).HasConversion(DateTimeToOffsetConverter);
             e.Property(x => x.EventType).IsRequired();
             e.Property(x => x.EventName).HasMaxLength(200).IsRequired();
             e.Property(x => x.EventOwner).HasMaxLength(200).IsRequired();
@@ -104,6 +115,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRo
             e.HasKey(x => x.Id);
             e.Property(x => x.Content).HasMaxLength(2000).IsRequired();
             e.Property(x => x.CreatedAt).IsRequired();
+            if (IsSqlServer) e.Property(x => x.CreatedAt).HasConversion(DateTimeToOffsetConverter);
             e.HasIndex(x => x.RequestId);
         });
     }
