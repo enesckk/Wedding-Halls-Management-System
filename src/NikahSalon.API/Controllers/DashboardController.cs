@@ -8,7 +8,7 @@ namespace NikahSalon.API.Controllers;
 
 [ApiController]
 [Route("api/v1/dashboard")]
-[Authorize(Roles = "Editor,Viewer")]
+[Authorize(Roles = "Editor,Viewer,SuperAdmin")]
 public sealed class DashboardController : ControllerBase
 {
     private readonly GetDashboardStatsQueryHandler _statsHandler;

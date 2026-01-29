@@ -14,7 +14,7 @@ public sealed class GetSchedulesByHallQueryHandler
 
     public async Task<IReadOnlyList<ScheduleDto>> HandleAsync(GetSchedulesByHallQuery query, CancellationToken ct = default)
     {
-        var items = await _repository.GetByHallIdAsync(query.HallId, ct);
+        var items = await _repository.GetByHallIdAsync(query.HallId, query.CreatedByUserId, query.EventType, ct);
         return items.Select(s => new ScheduleDto
         {
             Id = s.Id,
@@ -22,7 +22,11 @@ public sealed class GetSchedulesByHallQueryHandler
             Date = s.Date,
             StartTime = s.StartTime,
             EndTime = s.EndTime,
-            Status = s.Status
+            Status = s.Status,
+            CreatedByUserId = s.CreatedByUserId,
+            EventType = s.EventType,
+            EventName = s.EventName,
+            EventOwner = s.EventOwner
         }).ToList();
     }
 }

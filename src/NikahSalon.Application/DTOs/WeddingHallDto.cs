@@ -3,6 +3,7 @@ namespace NikahSalon.Application.DTOs;
 public sealed class WeddingHallDto
 {
     public Guid Id { get; init; }
+    public Guid CenterId { get; init; } // Merkez ID'si
     public string Name { get; init; } = string.Empty;
     public string Address { get; init; } = string.Empty;
     public int Capacity { get; init; }

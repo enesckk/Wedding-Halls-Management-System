@@ -26,6 +26,8 @@ public sealed class UpdateUserCommandHandler
             command.Email,
             command.FullName,
             command.Role,
+            command.Department,
+            command.Phone,
             ct);
 
         if (userInfo == null)

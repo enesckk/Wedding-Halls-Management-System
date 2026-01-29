@@ -2,6 +2,7 @@ using NikahSalon.Application.DTOs;
 using NikahSalon.Application.Interfaces;
 using NikahSalon.Domain.Entities;
 using NikahSalon.Domain.Enums;
+using System.Text.RegularExpressions;
 
 namespace NikahSalon.Application.Halls.CreateHall;
 
@@ -9,13 +10,40 @@ public sealed class CreateHallCommandHandler
 {
     private readonly IWeddingHallRepository _hallRepo;
     private readonly IScheduleRepository _scheduleRepo;
+    private readonly IHallAccessRepository _hallAccessRepo;
+    private readonly ICenterRepository _centerRepo;
 
     public CreateHallCommandHandler(
         IWeddingHallRepository hallRepo,
-        IScheduleRepository scheduleRepo)
+        IScheduleRepository scheduleRepo,
+        IHallAccessRepository hallAccessRepo,
+        ICenterRepository centerRepo)
     {
         _hallRepo = hallRepo;
         _scheduleRepo = scheduleRepo;
+        _hallAccessRepo = hallAccessRepo;
+        _centerRepo = centerRepo;
+    }
+
+    private static List<Guid> ParseAllowedUserIds(string description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return new List<Guid>();
+
+        // "Erişim İzni Olan Editörler: [id1,id2,id3]" formatını parse et
+        var match = Regex.Match(description, @"Erişim İzni Olan Editörler:\s*\[([^\]]+)\]");
+        if (!match.Success)
+            return new List<Guid>();
+
+        var idsString = match.Groups[1].Value;
+        var ids = idsString.Split(',')
+            .Select(id => id.Trim())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Where(id => Guid.TryParse(id, out _))
+            .Select(Guid.Parse)
+            .ToList();
+
+        return ids;
     }
 
     private static (TimeOnly Start, TimeOnly End) SlotToRange(string slot)
@@ -39,6 +67,7 @@ public sealed class CreateHallCommandHandler
         var entity = new WeddingHall
         {
             Id = Guid.NewGuid(),
+            CenterId = command.CenterId,
             Name = command.Name,
             Address = command.Address,
             Capacity = command.Capacity,
@@ -47,6 +76,46 @@ public sealed class CreateHallCommandHandler
             TechnicalDetails = command.TechnicalDetails
         };
         var created = await _hallRepo.AddAsync(entity, ct);
+
+        // Erişim izinlerini ekle (hem command'dan gelen hem de merkeze erişim izni olan editörler)
+        var allAllowedUserIds = new HashSet<Guid>();
+        
+        // Command'dan gelen erişim izinleri (şu anda kullanılmıyor ama gelecekte kullanılabilir)
+        if (command.AllowedUserIds is { Count: > 0 })
+        {
+            foreach (var userId in command.AllowedUserIds)
+            {
+                allAllowedUserIds.Add(userId);
+            }
+        }
+
+        // Merkeze erişim izni olan editörler için de erişim izni ver
+        if (command.CenterId != Guid.Empty)
+        {
+            var center = await _centerRepo.GetByIdAsync(command.CenterId, ct);
+            if (center != null)
+            {
+                var centerAllowedUserIds = ParseAllowedUserIds(center.Description);
+                foreach (var userId in centerAllowedUserIds)
+                {
+                    allAllowedUserIds.Add(userId);
+                }
+            }
+        }
+
+        // Tüm erişim izinlerini HallAccesses tablosuna ekle
+        if (allAllowedUserIds.Count > 0)
+        {
+            var accesses = allAllowedUserIds.Select(userId => new HallAccess
+            {
+                Id = Guid.NewGuid(),
+                HallId = created.Id,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow
+            }).ToList();
+            
+            await _hallAccessRepo.AddRangeAsync(accesses, ct);
+        }
 
         if (command.TimeSlots is { Count: > 0 })
         {
@@ -77,11 +146,13 @@ public sealed class CreateHallCommandHandler
         return new WeddingHallDto
         {
             Id = created.Id,
+            CenterId = created.CenterId,
             Name = created.Name,
             Address = created.Address,
             Capacity = created.Capacity,
             Description = created.Description,
-            ImageUrl = created.ImageUrl
+            ImageUrl = created.ImageUrl,
+            TechnicalDetails = created.TechnicalDetails
         };
     }
 }

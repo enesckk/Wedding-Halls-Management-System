@@ -6,6 +6,7 @@ public sealed class CreateHallCommandValidator : AbstractValidator<CreateHallCom
 {
     public CreateHallCommandValidator()
     {
+        RuleFor(x => x.CenterId).NotEmpty().WithMessage("CenterId is required.");
         RuleFor(x => x.Name).NotEmpty().WithMessage("Name is required.");
         RuleFor(x => x.Address).NotEmpty().WithMessage("Address is required.");
         RuleFor(x => x.Capacity).GreaterThan(0).WithMessage("Capacity must be greater than 0.");

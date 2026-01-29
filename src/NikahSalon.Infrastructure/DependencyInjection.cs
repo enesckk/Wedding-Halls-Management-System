@@ -39,7 +39,9 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<AppDbContext>()
             .AddRoleManager<RoleManager<IdentityRole<Guid>>>();
 
+        services.AddScoped<ICenterRepository, CenterRepository>();
         services.AddScoped<IWeddingHallRepository, WeddingHallRepository>();
+        services.AddScoped<IHallAccessRepository, HallAccessRepository>();
         services.AddScoped<IScheduleRepository, ScheduleRepository>();
         services.AddScoped<IRequestRepository, RequestRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();

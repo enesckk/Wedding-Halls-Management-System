@@ -1,11 +1,15 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using NikahSalon.Application.Halls.CreateHall;
+using NikahSalon.Application.Halls.DeleteHall;
 using NikahSalon.Application.Halls.GetHallById;
 using NikahSalon.Application.Halls.GetHalls;
 using NikahSalon.Application.Halls.UpdateHall;
 using NikahSalon.Application.Schedules.GetSchedulesByHall;
+using NikahSalon.Application.Auth.GetCurrentUser;
+using NikahSalon.Domain.Enums;
 
 namespace NikahSalon.API.Controllers;
 
@@ -16,28 +20,28 @@ public sealed class HallsController : ControllerBase
 {
     private readonly GetHallsQueryHandler _getHallsHandler;
     private readonly GetHallByIdQueryHandler _getHallByIdHandler;
-    private readonly CreateHallCommandHandler _createHandler;
-    private readonly UpdateHallCommandHandler _updateHandler;
     private readonly GetSchedulesByHallQueryHandler _getSchedulesHandler;
-    private readonly CreateHallCommandValidator _createValidator;
-    private readonly UpdateHallCommandValidator _updateValidator;
+    private readonly GetCurrentUserQueryHandler _getCurrentUserHandler;
+    private readonly CreateHallCommandHandler _createHallHandler;
+    private readonly UpdateHallCommandHandler _updateHallHandler;
+    private readonly DeleteHallCommandHandler _deleteHallHandler;
 
     public HallsController(
         GetHallsQueryHandler getHallsHandler,
         GetHallByIdQueryHandler getHallByIdHandler,
-        CreateHallCommandHandler createHandler,
-        UpdateHallCommandHandler updateHandler,
         GetSchedulesByHallQueryHandler getSchedulesHandler,
-        CreateHallCommandValidator createValidator,
-        UpdateHallCommandValidator updateValidator)
+        GetCurrentUserQueryHandler getCurrentUserHandler,
+        CreateHallCommandHandler createHallHandler,
+        UpdateHallCommandHandler updateHallHandler,
+        DeleteHallCommandHandler deleteHallHandler)
     {
         _getHallsHandler = getHallsHandler;
         _getHallByIdHandler = getHallByIdHandler;
-        _createHandler = createHandler;
-        _updateHandler = updateHandler;
         _getSchedulesHandler = getSchedulesHandler;
-        _createValidator = createValidator;
-        _updateValidator = updateValidator;
+        _getCurrentUserHandler = getCurrentUserHandler;
+        _createHallHandler = createHallHandler;
+        _updateHallHandler = updateHallHandler;
+        _deleteHallHandler = deleteHallHandler;
     }
 
     [HttpGet]
@@ -47,6 +51,29 @@ public sealed class HallsController : ControllerBase
         var query = new GetHallsQuery();
         var items = await _getHallsHandler.HandleAsync(query, ct);
         return Ok(items);
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "SuperAdmin")]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Create([FromBody] CreateHallRequest request, CancellationToken ct)
+    {
+        var command = new CreateHallCommand
+        {
+            CenterId = request.CenterId,
+            Name = request.Name ?? string.Empty,
+            Address = request.Address ?? string.Empty,
+            Capacity = request.Capacity,
+            Description = request.Description ?? string.Empty,
+            ImageUrl = request.ImageUrl ?? string.Empty,
+            TechnicalDetails = request.TechnicalDetails ?? string.Empty,
+            TimeSlots = request.TimeSlots,
+            AllowedUserIds = request.AllowedUserIds
+        };
+        var created = await _createHallHandler.HandleAsync(command, ct);
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
     [HttpGet("{id:guid}")]
@@ -60,86 +87,84 @@ public sealed class HallsController : ControllerBase
         return Ok(hall);
     }
 
-    [HttpGet("{id:guid}/schedules")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetSchedules(Guid id, CancellationToken ct)
-    {
-        var query = new GetSchedulesByHallQuery { HallId = id };
-        var items = await _getSchedulesHandler.HandleAsync(query, ct);
-        return Ok(items);
-    }
-
-    [HttpPost]
-    [Authorize(Roles = "Editor")]
-    [EnableRateLimiting("WritePolicy")]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> Create([FromBody] CreateHallRequest request, CancellationToken ct)
-    {
-        var command = new CreateHallCommand
-        {
-            Name = request.Name,
-            Address = request.Address,
-            Capacity = request.Capacity,
-            Description = request.Description,
-            ImageUrl = request.ImageUrl,
-            TechnicalDetails = request.TechnicalDetails,
-            TimeSlots = request.TimeSlots
-        };
-        var validation = await _createValidator.ValidateAsync(command, ct);
-        if (!validation.IsValid)
-            throw new FluentValidation.ValidationException(validation.Errors);
-
-        var created = await _createHandler.HandleAsync(command, ct);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
-    }
-
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Editor")]
-    [EnableRateLimiting("WritePolicy")]
+    [Authorize(Roles = "SuperAdmin")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateHallRequest request, CancellationToken ct)
     {
         var command = new UpdateHallCommand
         {
             Id = id,
-            Name = request.Name,
-            Address = request.Address,
+            CenterId = request.CenterId,
+            Name = request.Name ?? string.Empty,
+            Address = request.Address ?? string.Empty,
             Capacity = request.Capacity,
-            Description = request.Description,
-            ImageUrl = request.ImageUrl
+            Description = request.Description ?? string.Empty,
+            ImageUrl = request.ImageUrl ?? string.Empty,
+            TechnicalDetails = request.TechnicalDetails ?? string.Empty,
+            AllowedUserIds = request.AllowedUserIds
         };
-        var validation = await _updateValidator.ValidateAsync(command, ct);
-        if (!validation.IsValid)
-            throw new FluentValidation.ValidationException(validation.Errors);
-
-        var updated = await _updateHandler.HandleAsync(command, ct);
+        var updated = await _updateHallHandler.HandleAsync(command, ct);
         if (updated is null) return NotFound();
         return Ok(updated);
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "SuperAdmin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var command = new DeleteHallCommand { Id = id };
+        var deleted = await _deleteHallHandler.HandleAsync(command, ct);
+        if (!deleted) return NotFound();
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/schedules")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSchedules(Guid id, CancellationToken ct)
+    {
+        // Editor artık tüm schedule'ları görebilir (filtreleme yok)
+        // Düzenleme/silme yetkisi UpdateSchedule ve DeleteSchedule handler'larında kontrol ediliyor
+        var query = new GetSchedulesByHallQuery 
+        { 
+            HallId = id,
+            CreatedByUserId = null,
+            EventType = null
+        };
+        var items = await _getSchedulesHandler.HandleAsync(query, ct);
+        return Ok(items);
     }
 }
 
 public sealed class CreateHallRequest
 {
-    public string Name { get; set; } = string.Empty;
-    public string Address { get; set; } = string.Empty;
-    public int Capacity { get; set; }
-    public string Description { get; set; } = string.Empty;
-    public string ImageUrl { get; set; } = string.Empty;
-    public string TechnicalDetails { get; set; } = string.Empty;
-    /// <summary>İzin verilen başlangıç saatleri (örn. 09:00, 10:30). Verilirse önümüzdeki 30 gün için müsaitlik oluşturulur.</summary>
-    public List<string>? TimeSlots { get; set; }
+    public Guid CenterId { get; init; } // Merkez ID'si
+    public string? Name { get; init; }
+    public string? Address { get; init; }
+    public int Capacity { get; init; }
+    public string? Description { get; init; }
+    public string? ImageUrl { get; init; }
+    public string? TechnicalDetails { get; init; }
+    public IReadOnlyList<string>? TimeSlots { get; init; }
+    /// <summary>Bu salona erişim hakkı olan Editor kullanıcı ID'leri</summary>
+    public IReadOnlyList<Guid>? AllowedUserIds { get; init; }
 }
 
 public sealed class UpdateHallRequest
 {
-    public string Name { get; set; } = string.Empty;
-    public string Address { get; set; } = string.Empty;
-    public int Capacity { get; set; }
-    public string Description { get; set; } = string.Empty;
-    public string ImageUrl { get; set; } = string.Empty;
+    public Guid CenterId { get; init; } // Merkez ID'si
+    public string? Name { get; init; }
+    public string? Address { get; init; }
+    public int Capacity { get; init; }
+    public string? Description { get; init; }
+    public string? ImageUrl { get; init; }
+    public string? TechnicalDetails { get; init; }
+    /// <summary>Bu salona erişim hakkı olan Editor kullanıcı ID'leri</summary>
+    public IReadOnlyList<Guid>? AllowedUserIds { get; init; }
 }

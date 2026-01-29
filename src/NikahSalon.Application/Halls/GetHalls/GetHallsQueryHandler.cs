@@ -25,6 +25,7 @@ public sealed class GetHallsQueryHandler
         var items = halls.Select(h => new WeddingHallDto
         {
             Id = h.Id,
+            CenterId = h.CenterId,
             Name = h.Name,
             Address = h.Address,
             Capacity = h.Capacity,

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using NikahSalon.Application.Common;
 using NikahSalon.Application.Interfaces;
+using NikahSalon.Domain.Enums;
 using NikahSalon.Infrastructure.Data;
 using NikahSalon.Infrastructure.Identity;
 
@@ -34,7 +35,9 @@ public sealed class UserRepository : IUserRepository
             Id = user.Id,
             Email = user.Email ?? string.Empty,
             FullName = user.FullName,
-            Role = role
+            Role = role,
+            Department = user.Department,
+            Phone = user.Phone
         };
     }
 
@@ -49,7 +52,9 @@ public sealed class UserRepository : IUserRepository
             Id = user.Id,
             Email = user.Email ?? string.Empty,
             FullName = user.FullName,
-            Role = role
+            Role = role,
+            Department = user.Department,
+            Phone = user.Phone
         };
     }
 
@@ -87,14 +92,16 @@ public sealed class UserRepository : IUserRepository
                 Id = user.Id,
                 Email = user.Email ?? string.Empty,
                 FullName = user.FullName,
-                Role = role
+                Role = role,
+                Department = user.Department,
+                Phone = user.Phone
             });
         }
 
         return (userInfos, totalCount);
     }
 
-    public async Task<UserInfo> CreateAsync(string email, string password, string fullName, string role, CancellationToken ct = default)
+    public async Task<UserInfo> CreateAsync(string email, string password, string fullName, string role, EventType? department, CancellationToken ct = default)
     {
         // Check if user already exists
         var existingUser = await _userManager.FindByEmailAsync(email);
@@ -111,7 +118,8 @@ public sealed class UserRepository : IUserRepository
             UserName = email,
             Email = email,
             FullName = fullName,
-            EmailConfirmed = true
+            EmailConfirmed = true,
+            Department = department
         };
 
         var result = await _userManager.CreateAsync(user, password);
@@ -129,11 +137,13 @@ public sealed class UserRepository : IUserRepository
             Id = user.Id,
             Email = user.Email ?? string.Empty,
             FullName = user.FullName,
-            Role = role
+            Role = role,
+            Department = user.Department,
+            Phone = user.Phone
         };
     }
 
-    public async Task<UserInfo?> UpdateAsync(Guid id, string? email, string? fullName, string? role, CancellationToken ct = default)
+    public async Task<UserInfo?> UpdateAsync(Guid id, string? email, string? fullName, string? role, EventType? department, string? phone, CancellationToken ct = default)
     {
         var user = await _userManager.FindByIdAsync(id.ToString());
         if (user == null)
@@ -154,6 +164,23 @@ public sealed class UserRepository : IUserRepository
         if (!string.IsNullOrWhiteSpace(fullName))
         {
             user.FullName = fullName;
+        }
+
+        // Update phone if provided (including null to clear)
+        if (phone != null)
+        {
+            user.Phone = string.IsNullOrWhiteSpace(phone) ? null : phone;
+        }
+
+        // Update department if provided
+        if (department.HasValue)
+        {
+            user.Department = department.Value;
+        }
+        else if (department == null && user.Department.HasValue)
+        {
+            // Explicitly set to null if department is being cleared
+            user.Department = null;
         }
 
         var updateResult = await _userManager.UpdateAsync(user);
@@ -190,7 +217,9 @@ public sealed class UserRepository : IUserRepository
             Id = user.Id,
             Email = user.Email ?? string.Empty,
             FullName = user.FullName,
-            Role = finalRole
+            Role = finalRole,
+            Department = user.Department,
+            Phone = user.Phone
         };
     }
 }

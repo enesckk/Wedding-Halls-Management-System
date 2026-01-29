@@ -25,7 +25,11 @@ public sealed class GetScheduleByIdQueryHandler
             Date = schedule.Date,
             StartTime = schedule.StartTime,
             EndTime = schedule.EndTime,
-            Status = schedule.Status
+            Status = schedule.Status,
+            CreatedByUserId = schedule.CreatedByUserId,
+            EventType = schedule.EventType,
+            EventName = schedule.EventName,
+            EventOwner = schedule.EventOwner
         };
     }
 }

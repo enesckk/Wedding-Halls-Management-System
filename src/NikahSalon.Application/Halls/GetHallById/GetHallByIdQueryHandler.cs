@@ -19,6 +19,7 @@ public sealed class GetHallByIdQueryHandler
         return new WeddingHallDto
         {
             Id = hall.Id,
+            CenterId = hall.CenterId,
             Name = hall.Name,
             Address = hall.Address,
             Capacity = hall.Capacity,

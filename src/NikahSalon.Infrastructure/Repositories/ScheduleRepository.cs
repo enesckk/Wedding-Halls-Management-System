@@ -22,8 +22,17 @@ public sealed class ScheduleRepository : IScheduleRepository
 
     public async Task<IReadOnlyList<Schedule>> GetByHallIdAsync(Guid hallId, CancellationToken ct = default)
     {
-        return await _db.Schedules.AsNoTracking()
-            .Where(x => x.WeddingHallId == hallId)
+        return await GetByHallIdAsync(hallId, null, null, ct);
+    }
+
+    public async Task<IReadOnlyList<Schedule>> GetByHallIdAsync(Guid hallId, Guid? createdByUserId, EventType? eventType, CancellationToken ct = default)
+    {
+        // Artık filtreleme yok - Editor'lar tüm schedule'ları görebilir
+        // Düzenleme/silme yetkisi UpdateSchedule ve DeleteSchedule handler'larında kontrol ediliyor
+        var query = _db.Schedules.AsNoTracking()
+            .Where(x => x.WeddingHallId == hallId);
+
+        return await query
             .OrderBy(x => x.Date).ThenBy(x => x.StartTime)
             .ToListAsync(ct);
     }
@@ -62,6 +71,15 @@ public sealed class ScheduleRepository : IScheduleRepository
         _db.Schedules.Remove(entity);
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    public async Task<int> DeleteAllAsync(CancellationToken ct = default)
+    {
+        var allSchedules = await _db.Schedules.ToListAsync(ct);
+        var count = allSchedules.Count;
+        _db.Schedules.RemoveRange(allSchedules);
+        await _db.SaveChangesAsync(ct);
+        return count;
     }
 
     public async Task<int> GetTotalCountAsync(CancellationToken ct = default)

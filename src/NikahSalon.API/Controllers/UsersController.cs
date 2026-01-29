@@ -5,12 +5,13 @@ using NikahSalon.Application.Users.CreateUser;
 using NikahSalon.Application.Users.GetUserById;
 using NikahSalon.Application.Users.GetUsers;
 using NikahSalon.Application.Users.UpdateUser;
+using NikahSalon.Domain.Enums;
 
 namespace NikahSalon.API.Controllers;
 
 [ApiController]
 [Route("api/v1/users")]
-[Authorize(Roles = "Editor")]
+[Authorize(Roles = "SuperAdmin")]
 public sealed class UsersController : ControllerBase
 {
     private readonly GetUsersQueryHandler _getUsersHandler;
@@ -77,7 +78,8 @@ public sealed class UsersController : ControllerBase
             Email = request.Email,
             Password = request.Password,
             FullName = request.FullName,
-            Role = request.Role
+            Role = request.Role,
+            Department = request.Department
         };
         var validation = await _createValidator.ValidateAsync(command, ct);
         if (!validation.IsValid)
@@ -107,7 +109,8 @@ public sealed class UsersController : ControllerBase
             Id = id,
             Email = request.Email,
             FullName = request.FullName,
-            Role = request.Role
+            Role = request.Role,
+            Department = request.Department
         };
         var validation = await _updateValidator.ValidateAsync(command, ct);
         if (!validation.IsValid)
@@ -132,6 +135,10 @@ public sealed class CreateUserRequest
     public string Password { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    /// <summary>
+    /// Editor'lar için alan/departman (Nikah=0, Nişan=1, Konser=2, Toplantı=3, Özel=4). SuperAdmin ve Viewer için null.
+    /// </summary>
+    public EventType? Department { get; set; }
 }
 
 public sealed class UpdateUserRequest
@@ -139,4 +146,9 @@ public sealed class UpdateUserRequest
     public string? Email { get; set; }
     public string? FullName { get; set; }
     public string? Role { get; set; }
+    /// <summary>
+    /// Editor'lar için alan/departman (Nikah=0, Nişan=1, Konser=2, Toplantı=3, Özel=4). SuperAdmin ve Viewer için null.
+    /// </summary>
+    public EventType? Department { get; set; }
+    public string? Phone { get; set; }
 }

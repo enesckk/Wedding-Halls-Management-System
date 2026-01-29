@@ -6,13 +6,16 @@ namespace NikahSalon.Application.Halls.DeleteHall;
 public sealed class DeleteHallCommandHandler
 {
     private readonly IWeddingHallRepository _repository;
+    private readonly IHallAccessRepository _hallAccessRepo;
     private readonly ILogger<DeleteHallCommandHandler> _logger;
 
     public DeleteHallCommandHandler(
         IWeddingHallRepository repository,
+        IHallAccessRepository hallAccessRepo,
         ILogger<DeleteHallCommandHandler> logger)
     {
         _repository = repository;
+        _hallAccessRepo = hallAccessRepo;
         _logger = logger;
     }
 
@@ -26,6 +29,9 @@ public sealed class DeleteHallCommandHandler
             _logger.LogWarning("Hall with ID {HallId} not found for deletion", command.Id);
             return false;
         }
+
+        // Erişim izinlerini sil (Cascade delete ile otomatik silinir ama manuel de silebiliriz)
+        await _hallAccessRepo.RemoveByHallIdAsync(command.Id, ct);
 
         var deleted = await _repository.DeleteAsync(command.Id, ct);
         

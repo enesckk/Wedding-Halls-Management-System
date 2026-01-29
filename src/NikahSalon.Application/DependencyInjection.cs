@@ -30,6 +30,12 @@ using NikahSalon.Application.Users.UpdateUser;
 using NikahSalon.Application.Dashboard.GetDashboardStats;
 using NikahSalon.Application.Dashboard.GetRequestsSummary;
 using NikahSalon.Application.Dashboard.GetSchedulesSummary;
+using NikahSalon.Application.Centers.CreateCenter;
+using NikahSalon.Application.Centers.DeleteCenter;
+using NikahSalon.Application.Centers.GetCenterById;
+using NikahSalon.Application.Centers.GetCenterDetail;
+using NikahSalon.Application.Centers.GetCenters;
+using NikahSalon.Application.Centers.UpdateCenter;
 
 namespace NikahSalon.Application;
 
@@ -69,6 +75,12 @@ public static class DependencyInjection
         services.AddScoped<GetDashboardStatsQueryHandler>();
         services.AddScoped<GetRequestsSummaryQueryHandler>();
         services.AddScoped<GetSchedulesSummaryQueryHandler>();
+        services.AddScoped<GetCenterByIdQueryHandler>();
+        services.AddScoped<GetCenterDetailQueryHandler>();
+        services.AddScoped<GetCentersQueryHandler>();
+        services.AddScoped<CreateCenterCommandHandler>();
+        services.AddScoped<UpdateCenterCommandHandler>();
+        services.AddScoped<DeleteCenterCommandHandler>();
 
         return services;
     }

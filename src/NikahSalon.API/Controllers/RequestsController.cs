@@ -2,6 +2,10 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using NikahSalon.Application.Messages.CreateMessage;
 using NikahSalon.Application.Messages.DeleteMessage;
 using NikahSalon.Application.Messages.GetMessagesByRequestId;
@@ -69,7 +73,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Viewer,Editor")]
+    [Authorize(Roles = "Viewer,Editor,SuperAdmin")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -107,7 +111,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Editor,Viewer")]
+    [Authorize(Roles = "Editor,Viewer,SuperAdmin")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -120,7 +124,14 @@ public sealed class RequestsController : ControllerBase
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var roleClaim = User.FindFirstValue(ClaimTypes.Role);
         
-        // Viewer can only see their own requests
+        // Debug: Rol bilgisini logla (development'ta)
+        if (HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>().IsDevelopment())
+        {
+            var logger = HttpContext.RequestServices.GetRequiredService<ILogger<RequestsController>>();
+            logger.LogInformation("GetAll - User Role: {Role}, UserId: {UserId}", roleClaim, userIdClaim);
+        }
+        
+        // Viewer can only see their own requests (SuperAdmin and Editor can see all)
         Guid? createdByUserId = null;
         if (roleClaim == "Viewer" && !string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
         {
@@ -153,7 +164,7 @@ public sealed class RequestsController : ControllerBase
         var request = await _getRequestByIdHandler.HandleAsync(query, ct);
         if (request is null) return NotFound();
         
-        // Viewer can only see their own requests
+        // Viewer can only see their own requests (SuperAdmin and Editor can see all)
         if (roleClaim == "Viewer" && !string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
         {
             if (request.CreatedByUserId != userId)
@@ -188,7 +199,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpPut("{id:guid}/approve")]
-    [Authorize(Roles = "Editor")]
+    [Authorize(Roles = "Editor,SuperAdmin")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -236,7 +247,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpPut("{id:guid}/reject")]
-    [Authorize(Roles = "Editor")]
+    [Authorize(Roles = "Editor,SuperAdmin")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -288,7 +299,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpPut("{id:guid}/update")]
-    [Authorize(Roles = "Viewer,Editor")]
+    [Authorize(Roles = "Viewer,Editor,SuperAdmin")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -387,7 +398,7 @@ public sealed class RequestsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Editor,Viewer")]
+    [Authorize(Roles = "Editor,Viewer,SuperAdmin")]
     [EnableRateLimiting("WritePolicy")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

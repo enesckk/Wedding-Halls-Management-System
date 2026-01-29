@@ -10,15 +10,18 @@ public sealed class CreateScheduleCommandHandler
 {
     private readonly IScheduleRepository _scheduleRepository;
     private readonly IWeddingHallRepository _hallRepository;
+    private readonly IHallAccessRepository _hallAccessRepository;
     private readonly ILogger<CreateScheduleCommandHandler> _logger;
 
     public CreateScheduleCommandHandler(
         IScheduleRepository scheduleRepository,
         IWeddingHallRepository hallRepository,
+        IHallAccessRepository hallAccessRepository,
         ILogger<CreateScheduleCommandHandler> logger)
     {
         _scheduleRepository = scheduleRepository;
         _hallRepository = hallRepository;
+        _hallAccessRepository = hallAccessRepository;
         _logger = logger;
     }
 
@@ -36,6 +39,19 @@ public sealed class CreateScheduleCommandHandler
             throw new InvalidOperationException($"Wedding hall with ID {command.WeddingHallId} not found.");
         }
 
+        // Editor için erişim kontrolü: Editor sadece erişim hakkı olan salonlara rezervasyon yapabilir
+        // SuperAdmin tüm salonlara rezervasyon yapabilir
+        if (command.CallerRole == "Editor" && command.CallerUserId.HasValue)
+        {
+            var hasAccess = await _hallAccessRepository.HasAccessAsync(command.WeddingHallId, command.CallerUserId.Value, ct);
+            if (!hasAccess)
+            {
+                _logger.LogWarning("Editor user {UserId} attempted to create schedule for hall {HallId} without access", 
+                    command.CallerUserId, command.WeddingHallId);
+                throw new UnauthorizedAccessException("Bu salona rezervasyon yapma yetkiniz bulunmamaktadır.");
+            }
+        }
+
         // Check for overlapping schedules
         var hasOverlap = await _scheduleRepository.ExistsOverlapAsync(
             command.WeddingHallId,
@@ -50,7 +66,7 @@ public sealed class CreateScheduleCommandHandler
             _logger.LogWarning(
                 "Schedule overlap detected for HallId: {HallId}, Date: {Date}, Time: {StartTime}-{EndTime}",
                 command.WeddingHallId, command.Date, command.StartTime, command.EndTime);
-            throw new InvalidOperationException("Schedule overlaps with another slot for the same hall and date.");
+            throw new InvalidOperationException("Bu saat aralığında aynı salon ve tarih için başka bir rezervasyon bulunmaktadır.");
         }
 
         var schedule = new Schedule
@@ -60,7 +76,11 @@ public sealed class CreateScheduleCommandHandler
             Date = command.Date,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
-            Status = command.Status
+            Status = command.Status,
+            CreatedByUserId = command.CreatedByUserId,
+            EventType = command.EventType,
+            EventName = command.EventName,
+            EventOwner = command.EventOwner
         };
 
         var created = await _scheduleRepository.AddAsync(schedule, ct);
@@ -76,7 +96,11 @@ public sealed class CreateScheduleCommandHandler
             Date = created.Date,
             StartTime = created.StartTime,
             EndTime = created.EndTime,
-            Status = created.Status
+            Status = created.Status,
+            CreatedByUserId = created.CreatedByUserId,
+            EventType = created.EventType,
+            EventName = created.EventName,
+            EventOwner = created.EventOwner
         };
     }
 }

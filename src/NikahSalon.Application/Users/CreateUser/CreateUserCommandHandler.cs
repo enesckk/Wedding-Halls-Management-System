@@ -26,6 +26,7 @@ public sealed class CreateUserCommandHandler
             command.Password,
             command.FullName,
             command.Role,
+            command.Department,
             ct);
 
         _logger.LogInformation(

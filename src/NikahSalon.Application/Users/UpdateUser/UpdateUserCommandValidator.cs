@@ -23,8 +23,8 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
         When(x => !string.IsNullOrWhiteSpace(x.Role), () =>
         {
             RuleFor(x => x.Role)
-                .Must(role => role == "Viewer" || role == "Editor")
-                .WithMessage("Role must be either 'Viewer' or 'Editor'.");
+                .Must(role => role == "Viewer" || role == "Editor" || role == "SuperAdmin")
+                .WithMessage("Role must be either 'Viewer', 'Editor', or 'SuperAdmin'.");
         });
     }
 }

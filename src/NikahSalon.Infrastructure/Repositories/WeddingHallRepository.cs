@@ -24,6 +24,14 @@ public sealed class WeddingHallRepository : IWeddingHallRepository
         return await _db.WeddingHalls.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<WeddingHall>> GetByCenterIdAsync(Guid centerId, CancellationToken ct = default)
+    {
+        return await _db.WeddingHalls.AsNoTracking()
+            .Where(x => x.CenterId == centerId)
+            .OrderBy(x => x.Name)
+            .ToListAsync(ct);
+    }
+
     public async Task<(IReadOnlyList<WeddingHall> Items, int TotalCount)> GetPagedAsync(int page, int pageSize, string? search, CancellationToken ct = default)
     {
         var query = _db.WeddingHalls.AsNoTracking();

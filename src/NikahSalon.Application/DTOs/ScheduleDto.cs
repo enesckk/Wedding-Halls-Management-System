@@ -10,4 +10,8 @@ public sealed class ScheduleDto
     public TimeOnly StartTime { get; init; }
     public TimeOnly EndTime { get; init; }
     public ScheduleStatus Status { get; init; }
+    public Guid? CreatedByUserId { get; init; }
+    public EventType? EventType { get; init; }
+    public string? EventName { get; init; }
+    public string? EventOwner { get; init; }
 }

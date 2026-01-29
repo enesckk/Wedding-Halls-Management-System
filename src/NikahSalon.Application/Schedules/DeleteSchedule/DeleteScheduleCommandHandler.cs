@@ -27,6 +27,26 @@ public sealed class DeleteScheduleCommandHandler
             return false;
         }
 
+        // SuperAdmin tüm schedule'ları silebilir
+        // Editor sadece kendi alanındaki (EventType) schedule'ları silebilir
+        if (command.CallerRole == "Editor")
+        {
+            // Editor'ın department'ı olmalı
+            if (!command.CallerDepartment.HasValue)
+            {
+                _logger.LogWarning("Editor user attempted to delete schedule {ScheduleId} but has no department assigned", command.Id);
+                throw new UnauthorizedAccessException("Editor kullanıcısının bir alan/departman atanmamış.");
+            }
+            
+            // Schedule'ın EventType'ı Editor'ın department'ı ile eşleşmeli
+            if (schedule.EventType != command.CallerDepartment.Value)
+            {
+                _logger.LogWarning("Editor user {UserId} attempted to delete schedule {ScheduleId} with EventType {ScheduleEventType} but their department is {EditorDepartment}", 
+                    command.CallerUserId, command.Id, schedule.EventType, command.CallerDepartment);
+                throw new UnauthorizedAccessException("Bu schedule'ı silme yetkiniz bulunmamaktadır. Sadece kendi alanınızdaki etkinlikleri silebilirsiniz.");
+            }
+        }
+
         var deleted = await _repository.DeleteAsync(command.Id, ct);
         
         if (deleted)
